@@ -1,0 +1,677 @@
+---
+title: "Análisis Estadístico de Datos Complejos"
+author: "Análisis de Datos Funcionales  (Temas 1 y 2)"
+date: "5 de octubre de 2023"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+<!--![    ](logo.png){id .class width=25% height=25%}-->
+<!--
+```{r pressure, echo=FALSE, fig.cap="", out.width = '15%'}
+knitr::include_graphics("logo.png")
+```
+-->
+
+
+ Enunciado del trabajo <img src="logo.png" alt="Logo UDC" align="right" width="140">
+
+En está práctica se empleará diferentes conjuntos de datos reales (que se ha descargado de la web de [Esios-Red Eléctrica](https://www.esios.ree.es/es)). 
+Cada conjunto de datos contiene un objeto (`ldat`) de la clase **ldata** con 2 objetos:
+
+* `df`: Data frame con un indicador del día del año (`index`) y la fecha en formato AAAA-MM-DD (`date`).
+* `XXXX`: Un objeto "fdata" con las curvas diarias.
+
+A continuación se muestra el código para cargar los datos del año `AAAA`:
+```{r, eval=FALSE,warning=FALSE,message=FALSE}
+
+
+
+Equipo | Grupo | BBDD1 | BBDD2
+-- |--- |-----------|----------
+1 | A | carbon | demanda
+2 | B | cc | energia
+3 | A | eolica | precio
+4 | B | hidraulica | demanda
+5 | A | sol_fotovol | energia
+6 | B | carbon | precio
+7 | A | cc | demanda
+8 | B | eolica | energia
+9 | A | hidraulica | precio
+10 | B | sol_fotovol | demanda
+11 | A | carbon | energia
+12 | B | cc | precio
+13 | A | eolica | demanda
+14 | B | hidraulica | energia
+15 | A | sol_fotovol | precio
+
+
+<!--
+Usar preferentemente la librarería `fda.usc`
+```{r, eval=FALSE,warning=FALSE,message=FALSE}
+library(fda.usc)
+```
+-->
+NOTA: **Para la entrega  de los trabajos (hasta el 27 de octubre de 2023)** podéis usar esta misma plantilla y compilar el fichero RMD en formato (HTML o PDF) para que sea reproducible vuestro código **comentado**.
+
+https://www.esios.ree.es/es
+
+ Parte  1: Introducción
+
+  a. Objetivo del estudio
+  
+En este trabajo vamos a analizar la relación entre la producción de carbón durante los años 2015, 2016, 2017 y 2018 con el precio diario de la energía. La base de datos consta de 24 valores por día, tanto para la producción de carbón como para el precio de la energía. Nuestra intención es tratar el carbón como un dato funcional y transformar el precio a una media diaria del mismo, para intentar explicar ese dato medio diario a partir de los valores de producción del carbón.
+Para lograrlo, hemos comenzado con un análisis exploratorio de los datos, y después pasamos a la creación y comprobación de los modelos de regresión funcional
+
+  b. Estado del arte
+  
+Este es un tema ampliamente estudiado, ya que la energía es algo que afecta directamente a todos nosotros diariamente, así como su precio. El carbón en concreto es interesante por dos motivos principales: es barato y bastante abundante [1]. Estas dos condiciones no son nada desdeñables, especialmente en un momento en el que el precio de la energía es muy elevado y, a la vez, la preocupación por el cambio climático y las energías no renovables están a la orden del día. 
+Sin embargo,nuestro objetivo se muestra complicado, ya que la energía total consumida no se corresponde solamente sólo con el carbón, por lo que su precio va a tener varias aristas más que esta. Por ejemplo, la demanda de electricidad en el 2010 cubierta con carbón es solamente del 9.39% [2].
+  
+  c. Revisión bibliográfica
+[1]: https://flexbooks.ck12.org/cbook/ck-12-conceptos-de-ciencias-de-la-tierra-grados-6-8-en-espanol/section/12.5/primary/lesson/la-energ%C3%ADa-del-carb%C3%B3n/
+[2]: https://energia.jcyl.es/web/es/biblioteca/carbon-mundo-europa-espana.html
+  
+  d. Descripción de los datos, creación de nuevas variables u otras fuentes
+  de información, etc.
+```{r}
+library(fda.usc)
+library(lubridate)
+library(stats)
+library(lmtest)
+library(fpp2)
+library(tseries)
+
+# Cargamos a base de datos do carbón
+load("esio_carbon_2015.rda")
+ldat0 <- ldat
+
+load("esio_carbon_2016.rda")
+ldat0$df <- rbind(ldat0$df, ldat$df)
+ldat0$carbon <- c(ldat0$carbon, ldat$carbon)
+
+load("esio_carbon_2017.rda")
+ldat0$df <- rbind(ldat0$df, ldat$df)
+ldat0$carbon <- c(ldat0$carbon, ldat$carbon)
+
+load("esio_carbon_2018.rda")
+ldat0$df <- rbind(ldat0$df, ldat$df)
+ldat0$carbon <- c(ldat0$carbon, ldat$carbon)
+
+
+# Cargamos a base de datos do prezo
+load("esio_precio_2015.rda")
+ldat0$precio <- ldat$precio
+
+load("esio_precio_2016.rda")
+ldat0$precio <- c(ldat0$precio, ldat$precio)
+
+load("esio_precio_2017.rda")
+ldat0$precio <- c(ldat0$precio, ldat$precio)
+
+load("esio_precio_2018.rda")
+ldat0$precio <- c(ldat0$precio, ldat$precio)
+
+sapply(ldat0, dim)
+
+ldat0$df$wday <- weekdays(ldat0$df$date)
+ldat0$df$mes <- month(ldat0$df$date)
+ldat0$df$año <- year(ldat0$df$date)
+
+
+# Crear un vector de colores único para cada año
+unique_colors <- rainbow(length(unique(ldat0$df$año)))
+unique_colors1 <- rainbow(length(unique(ldat0$df$wday)))
+unique_colors2 <- rainbow(length(unique(ldat0$df$mes)))
+
+
+# Asignar colores a cada año
+colores_por_año <- unique_colors[as.numeric(factor(ldat0$df$año))]
+colores_por_wday<- unique_colors1[as.numeric(factor(ldat0$df$wday))]
+colores_por_mes<- unique_colors2[as.numeric(factor(ldat0$df$mes))]
+
+# Valores unicos
+años <- unique(ldat0$df$año)
+meses <- unique(ldat0$df$mes)
+wdays <- unique(ldat0$df$wday)
+
+
+plot_and_lines <- function(data, categories, colors, y,  title = NULL) {
+  plot(data, col = "gray", xlab = "Índice de tiempo", ylab = y, main = title)
+  for (i in 1:length(categories)) {
+    subset_data <- data[categories == categories[i]]
+    lines(func.mean(subset_data), col = unique(colors)[i], lwd = 2, lty = i)
+  }
+  legend("topright", horiz = TRUE, legend = categories, col = unique(colors), lwd = 2, lty = 1:length(categories), cex = 0.4)
+}
+
+
+# Llamadas a la función para las tres secciones
+
+plot_and_lines(ldat0$carbon, años, colores_por_año, y = "Carbón",  "Carbon medio diario por Año")
+# Como podemos observar, en los años observados los valores son muy parecidos
+plot_and_lines(ldat0$carbon, meses, colores_por_mes, y = "Carbón", "Carbon medio diario por Mes")
+# Observando por meses, vuelvue a ofrecer valores muy similares 
+plot_and_lines(ldat0$carbon, wdays, colores_por_wday, y = "Carbón", "Carbon medio diario por Día de la Semana")
+# Observando por día de la semana sí que vemos como los valores difieren entre sí. 
+# Podemos apreciar conclusiones lógicas, como por ejemplo que los fines de semana 
+# siempre hay menos producción de carbón en comparación con los días de 
+# entre semana, que son similares entre sí.
+plot_and_lines(ldat0$precio, años, colores_por_año, y = "Precio", "Precio medio diario por Año")
+# Aquí de nuevo vemos patrones muy similares entre los años
+plot_and_lines(ldat0$precio, meses, colores_por_mes, y = "Precio", "Precio medio diario por Mes")
+# También entre los meses los patrones son muy parecidos
+plot_and_lines(ldat0$precio, wdays, colores_por_wday,y = "Precio", "Precio medio diario por Día de la Semana")
+# De nuevo en los días de la semana es donde llegamos a las conclusiones más 
+# interesantes, ya que difieren más entre sí. Los domingos y sábados el precio 
+#está más bajo,mientras que los días de entre semana siguen patrones similares entre sí.
+
+
+# Derivadas CARBON
+carbon1 <- fdata.deriv(ldat0$carbon,1) # Primera derivada
+carbon2 <- fdata.deriv(ldat0$carbon,2) #  Segunda derivada
+
+# Vemos que la primera y segunda derivada se mantienen bastante constantes y 
+# alrededor de 0, al igual que sus desgloses por años, meses y días. Esto indica 
+# que el proceso de producción es bastante estable 
+plot_and_lines(carbon1, años, colores_por_año, "Carbon medio diario por Año")
+plot_and_lines(carbon1, meses, colores_por_mes, "Carbon medio diario por Mes")
+plot_and_lines(carbon1, wdays, colores_por_wday, "Carbon medio diario por Día de la Semana")
+
+plot_and_lines(carbon2, años, colores_por_año, "Carbon medio diario por Año")
+plot_and_lines(carbon2, meses, colores_por_mes, "Carbon medio diario por Mes")
+plot_and_lines(carbon2, wdays, colores_por_wday, "Carbon medio diario por Día de la Semana")
+
+#Derivadas PRECIO
+
+precio1=fdata.deriv(ldat0$precio,1) # Primera derivada
+precio2=fdata.deriv(ldat0$precio,2) # Segunda derivada
+
+# En cuanto al precio, hay algo más de fluctuación a lo largo del tiempo en 
+# la primera derivada, lo que indica que este varía aunque la producción del 
+# carbón se mantenga estable. En los desgloses por año, mes y día de la semana 
+# no se observa ninguna tendencia individual, por lo que ninguna variable 
+# de estas que sufre un especial cambio.
+
+plot_and_lines(precio1, años, colores_por_año, "Precio medio diario por Año")
+plot_and_lines(precio1, meses, colores_por_mes, "Precio medio diario por Mes")
+plot_and_lines(precio1, wdays, colores_por_wday, "Precio medio diario por Día de la Semana")
+
+plot_and_lines(precio2, años, colores_por_año, "Precio medio diario por Año")
+plot_and_lines(precio2, meses, colores_por_mes, "Precio medio diario por Mes")
+plot_and_lines(precio2, wdays, colores_por_wday, "Precio medio diario por Día de la Semana")
+```
+  
+
+
+ Parte  2: Análisis exploratorio de datos funcionales 
+
+  a. Representación (o suavización) de un dato funcional
+      + mediante una base de funciones fija (independiente de los datos)
+      + y otra base que dependa de los datos (data-driven). 
+```{r}
+     
+# Suavizado dun só dato
+plot(ldat0$carbon[1, ])
+base <- optim.basis(ldat0$carbon, numbasis = 4:12, type.basis = 'bspline') #  Base fixa
+lines(base$fdata.est[1], col = 3)
+pc <- create.pc.basis(ldat0$carbon) # Base data-driven
+# Podemos observar como la base data-driven (azul) suaviza mejor 
+lines(pc$fdata.est[1], col = 4)
+
+# Suavizado de todas as curvas 
+plot(base$fdata.est, main = 'BSPLINE', col = ldat0$df$año) # Base fixa
+base$lambda.opt # Lambda óptimo para la base fija
+base$numbasis.opt # Número de bases óptimas
+
+pc$lambda # Lambda óptimo para la base de PCA
+plot(pc$fdata.est, main = 'PC Basis', col = ldat0$df$año) # Base data-driven
+
+```
+  
+  b. Medidas de localización y de profundiad:
+      * dibujar las curvas en función del valor de su profundidad,
+      * indica la curva más profunda y comparala con otra medida de profundidad.
+      
+```{r}
+fmd <- depth.FM(ldat0$carbon, draw = T) # Primer método
+fmd1 <- depth.mode(ldat0$carbon, draw = T) # Método comparativo
+max <- which.max(fmd$dep)
+max #Índice de la curva más profunda
+min <- which.min(fmd$dep)
+min #Índice de la curva menos profunda
+plot(ldat0$carbon,col="grey") 
+# Mostramos la profundidad de cada curva, destacando las curvas más y menos profundas
+lines(ldat0$carbon[max],col=3,lwd=3)
+lines(ldat0$carbon[min],col=2,lwd=3)
+
+max1 <- which.max(fmd1$dep)
+min1 <- which.min(fmd1$dep)
+max1 == max # Comprobamos si las curvas devueltas son las mismas con los dos métodos
+min1 == min
+# En ambos casos, la curva obtenida es distinta
+lines(ldat0$carbon[max1],col=3,lwd=3)
+lines(ldat0$carbon[min1],col=2,lwd=3)
+```
+
+
+  c. Outliers funcionales:  Identifica las curvas atípicas (si las hay)
+```{r}
+# Calculamos los outliers para las curvas del carbón
+out <- outliers.depth.pond(ldat0$carbon, nb = 200, dfunc = depth.FM)
+outliers_carbon <- out$outliers
+
+# Calculamos los outliers para las curvas del precio
+out1 <- outliers.depth.pond(ldat0$precio, nb = 200, dfunc = depth.FM)
+outliers_precio <- out1$outliers
+
+# Calculamos los outliers comunes (mismo índice implica que son del mismo día), para ver que días fueron atípicos en ambos registros
+outliers_comunes <- list()
+for (i in outliers_carbon){
+  for (j in outliers_precio){
+    if (i == j){
+      outliers_comunes <- c(outliers_comunes, i)
+    }
+  }
+}
+
+# Mostramos las curvas atípicas comunes en rojo, y las que son atípicas para un solo registro  en amarillo
+plot(ldat0$carbon, col = 'grey')
+for (i in as.numeric(outliers_carbon)){
+  if (i %in% as.numeric(outliers_comunes)) {
+    lines(ldat0$carbon[i], col= "red",lwd = 3)
+  }else {
+    lines(ldat0$carbon[i], col='yellow',lwd = 3)
+  }
+}
+# Vemos que las curvas atípicas se situan en los extremos en las gráficas
+
+plot(ldat0$precio, col = 'grey')
+for (i in as.numeric(outliers_precio)){
+  if (i %in% as.numeric(outliers_comunes)){
+    lines(ldat0$precio[i], col= "red",lwd = 3)
+  }else{
+    lines(ldat0$precio[i], col='yellow',lwd = 3)}}
+```
+
+    
+  d. Correlación entre variables
+  
+```{r}
+ldat0$df$precio_medio_diario <- rowMeans(ldat0$precio$data)
+
+dcor.xy(ldat0$carbon, ldat0$precio) # Entre as curvas
+dcor.xy(ldat0$carbon, ldat0$df$precio_medio_diario) # Cos datos medios diarios
+
+# Ambas correlaciones son bastante bajas (menores que 0.5 ambas), 
+# lo que nos puede indicar que la produccción del carbón no va a 
+# explicar bien el precio de la energía
+```
+
+
+ Parte 3: Regresión funcional 
+
+  a. Ajusta un modelo de regresión funcional, selección óptima de las bases.
+```{r}
+#### MODELOS
+# Ajuste con fegre.basis (bsplines)
+ajusteBS <- fregre.basis.cv(ldat0$carbon, ldat0$df$precio_medio_diario, type.basis="bspline", basis.x=c(4,5,9,11,15), basis.b=c(4,5,7,9,11,15))
+
+# Ajuste con fegre.basis.cv (fourier)
+ajusteFou <- fregre.basis.cv(ldat0$carbon, ldat0$df$precio_medio_diario, type.basis="fourier", basis.x=c(3,5,9,11,15), basis.b=c(3,5,7,9,11,15))
+
+
+#Ajuste óptimo con componentes principales  fregre.pc.cv
+ajustePCOPT <- fregre.pc.cv(ldat0$carbon, ldat0$df$precio_medio_diario, kmax=6, lambda = 10^seq(-2,4),  P = c(0,0,1))
+
+
+ajusteBS
+# ninguno de  los coeficientes es significativo, y r cuadrado bajo: 0.4856735
+
+summary(ajusteFou$fregre.basis)
+# solo dos coeficientes son distintos de cero significativamenmte
+# r cuadrado bajo: 0.4853
+
+
+summary(ajustePCOPT$fregre.pc)
+# El modelo optimo es con una componente principal y una penalizacion de l = 10
+# El r cuadrado tambien es bajo: 0.4852102
+
+```
+
+  
+  b. Análisis de la bondad del mejor ajuste (análisis de los residuos).
+```{r}
+  
+# Vamos a comprobar la bonda del ajuste óptimo con componentes principales  fregre.pc.cv
+summary(ajustePCOPT$fregre.pc)
+
+
+# Como hemos dicho, el coeficiente de determina es bajo (0.4852102) significa que aproximadamente
+# el 48.52% de la variabilidad en la variable dependiente (precio_medio_diario) se puede 
+# explicar utilizando la variable carbon.
+
+# Parece que los residuos no son homocedasticos, hay una mayor concentración en valores bajos (Residuals vs Fitted.values)
+
+plot(ajustePCOPT$fregre.pc$residuals)
+title(main = "Residuos", cex.main = 1)
+# No tenemos linealidad en los residuos
+
+
+# test de media nula
+t.test(ajustePCOPT$fregre.pc$residuals, mu=0)
+# El contraste de media nula sugiere aceptar Ho, p-valor > 0.05 (aceptamos media nula)
+
+#test de homocedasticidad
+bptest(ajustePCOPT$fregre.pc$lm)
+# El test de Breusch-Pagan sugiere que hay heterocedasticidad
+
+# test de independencia
+Box.test(ajustePCOPT$fregre.pc$residuals, lag = 5, type = "Ljung-Box")
+# rechazamos aleatoriedad
+
+
+# Normalidad
+qqnorm(ajustePCOPT$fregre.pc$residuals)
+qqline(ajustePCOPT$fregre.pc$residuals)
+# El Q-Q Plot puede sugerir no normalidad, pero
+# esto es una opinion subjectiva
+
+
+# Test Normalidad
+jarque.bera.test(ajustePCOPT$fregre.pc$residuals)
+shapiro.test(ajustePCOPT$fregre.pc$residuals)
+
+# Para un 5% de significacion, tanto JarqueBera como Shapiro sugieren rechazar normalidad
+
+# Tiene un r cuadrado bajo y ademas no cumple con todas las hipotesis, 
+# por lo tanto no es un modelo válido
+
+
+# Vamos a comprobar la bondad del ajuste fregre.basis.cv (type.basis="bspline")
+summary(ajusteBS$fregre.basis)
+ajusteBS$fregre.basis
+# Como hemos dicho, coeficiente de determinacion bajo 0.4856735 y ninguno de los coeficientes
+# es significativamente distinto de cero
+# No es un modelo válido
+
+# Vamos a comprobar la bondad del ajuste con fregre.basis.cv (type.basis="fourier")
+
+summary(ajusteFou$fregre.basis)
+ajusteFou$fregre.basis
+# En este caso todos los coeficientes son significativamente distintos de cero
+# no obstante su valores estimados no distan mucho del cero, son valores muy bajos
+
+plot(ajusteFou$fregre.basis$residuals)
+title(main = "Residuos", cex.main = 1)
+# No hay linealidad
+
+# error cuadratico
+mean((ajusteFou$fregre.basis$residuals)^2)
+
+# test de media nula
+t.test(ajusteFou$fregre.basis$residuals, mu=0)
+
+# El contraste de media nula sugiere aceptar Ho, p-valor > 0.05 (aceptamos media nula)
+
+#test de homocedasticidad
+bptest(ajusteFou$fregre.basis$lm)
+# El test de Breusch-Pagan sugiere que hay heterocedasticidad
+
+# test de independencia
+Box.test(ajusteFou$fregre.basis$residuals, lag = 5, type = "Ljung-Box")
+# rechazamos aleatoriedad
+
+# Normalidad
+qqnorm(ajusteFou$fregre.basis$residuals)
+qqline(ajusteFou$fregre.basis$residuals)
+# El Q-Q Plot puede sugerir no normalidad, pero
+# esto es una opinion subjectiva
+
+
+# Test Normalidad
+jarque.bera.test(ajusteFou$fregre.basis$residuals)
+shapiro.test(ajusteFou$fregre.basis$residuals)
+
+# Para un 5% de significacion, tanto JarqueBera como Shapiro sugieren rechazar normalidad
+
+#### Conclusion 
+
+# Niguno de los modelos es válido
+```
+
+
+  c. Evaluación en una muestra test
+```{r}
+# cargamos los datos de 2019
+
+load("esio_carbon_2019.rda")
+ldat_test <- ldat
+load("esio_precio_2019.rda")
+ldat_test$precio <- ldat$precio
+ldat_test$df$precio_medio_diario <- rowMeans(ldat_test$precio$data)
+
+
+
+y <- ldat_test$df$precio_medio_diario
+x <- ldat_test$carbon
+
+
+
+# PREDECIMOS CON EL MODELO 
+
+summary(ajustePCOPT$fregre.pc)
+pred_pc_opt <- predict(ajustePCOPT$fregre.pc,x)
+
+
+par(mfrow = c(1, 2))
+
+y_limits <- range(c(y, pred_pc_opt))
+
+# Primer gráfico 
+plot(y, ylim = y_limits)
+title(main = "Precio medio real días de x_test", cex.main = 0.5)
+
+# Segundo gráfico
+plot(pred_pc_opt, ylim = y_limits)
+title(main = "Precio medio predicho días de x_test",cex.main = 0.5)
+
+
+# Viendo el plot, las predicciones no parecen muy exactas
+
+residuos <- y - pred_pc_opt
+
+# error cuadratico bastante alto, no es un buen predictor
+mean((residuos)^2)
+```
+ 
+
+  d. Extensión del modelo a más de una covariable (escalares, factores o funcionales o su derivada,...),  para ello puedes usar `fregre.lm()` (o el modelo aditivo funcional `fregre.gsam()`).
+```{r}
+precio_medio_diario <- as.data.frame(ldat0$df$precio_medio_diario)
+carbon <- ldat0$carbon
+
+# precio_medio_dia_anterior tiene almacenados los precios medios de los dias anteriores,
+# los dos primeros elementos son los precios medios de eses dias, es decir, es la respuesta real.
+# Esto lo consideramos asi ya que creemos que inventarnos un valor para la media es más perjudicial  
+
+
+precio_medio_dia_anterior <- c(ldat0$df$precio_medio_diario[1:2], ldat0$df$precio_medio_diario[1:length(ldat0$df$precio_medio_diario)])   
+precio_medio_dia_anterior <- precio_medio_dia_anterior[1:length(precio_medio_dia_anterior)-1]      
+precio_medio_dia_anterior <- precio_medio_dia_anterior[1:length(precio_medio_dia_anterior)-1]
+ldat0$df$precio_medio_dia_anterior <- precio_medio_dia_anterior
+precio_medio_dia_anterior <- ldat0$df$precio_medio_dia_anterior
+
+# creamos un modelo glm que ajuste el precio medio diario del mercado electrico usando la 
+# generacion de carbon diario y el precio medio de la energia de dos dias anteriores 
+res.lm <- fregre.glm( precio_medio_diario ~ carbon + precio_medio_dia_anterior , data = ldat0)
+summary(res.lm)
+res.lm$r2
+plot(res.lm)
+
+
+plot(res.lm$residuals)
+title(main = "Residuos", cex.main = 1)
+
+# error cuadratico
+mean((res.lm$residuals)^2)
+
+# test de media nula
+t.test(res.lm$residuals, mu=0)
+# El contraste de media nula sugiere aceptar Ho, p-valor > 0.05 (aceptamos media nula)
+
+
+# test de independencia
+Box.test(res.lm$residuals, lag = 5, type = "Ljung-Box")
+# RECHAZAMOS ALEATORIEDAD
+
+
+# Normalidad
+qqnorm(res.lm$residuals)
+qqline(res.lm$residuals)
+# El Q-Q Plot puede sugerir normalidad, pero
+# esto es una opinion subjectiva
+
+
+# Test Normalidad
+jarque.bera.test(res.lm$residuals)
+shapiro.test(res.lm$residuals)
+
+# Para un 5% de significacion, tanto JarqueBera como Shapiro sugieren RECHAZAR NORMALIDAD
+# ACEPTAMOS TODAS LAS HIPOTESIS SALVO INDEPENDENDIA DE LOS RESIDUOS
+
+# VAMOS A HACER PREDICCIONES CON ESTE MODELO
+
+# cargamos los datos de 2019
+
+load("esio_carbon_2019.rda")
+ldat_test <- ldat
+load("esio_precio_2019.rda")
+ldat_test$precio <- ldat$precio
+ldat_test$df$precio_medio_diario <- rowMeans(ldat_test$precio$data)
+
+
+precio_medio_diario <- as.data.frame(ldat_test$df$precio_medio_diario)
+carbon <- ldat_test$carbon
+
+
+precio_medio_dia_anterior <- c(ldat_test$df$precio_medio_diario[1:2], ldat_test$df$precio_medio_diario[1:length(ldat_test$df$precio_medio_diario)])
+precio_medio_dia_anterior <- precio_medio_dia_anterior[1:length(precio_medio_dia_anterior)-1]  # precio dia anterior
+precio_medio_dia_anterior <- precio_medio_dia_anterior[1:length(precio_medio_dia_anterior)-1]  # precio dos dias anteriores
+ldat_test$df$precio_medio_dia_anterior <- precio_medio_dia_anterior
+precio_medio_dia_anterior <- ldat_test$df$precio_medio_dia_anterior
+
+
+pred_pc_opt <- predict(res.lm,ldat_test)
+
+
+par(mfrow = c(1, 2))  # Divide la ventana gráfica en 1 fila y 2 columnas
+
+y_limits <- range(c(ldat_test$df$precio_medio_diario, pred_pc_opt))
+
+# Primer gráfico 
+plot(ldat_test$df$precio_medio_diario, ylim = y_limits)
+title(main = "Precio medio real días de x_test", cex.main = 0.65)
+
+# Segundo gráfico
+plot(pred_pc_opt, ylim = y_limits)
+title(main = "Precio medio predicho días de x_test",cex.main = 0.65)
+
+# Viendo el plot, las predicciones se parecen mucho a los valores reales 
+
+residuos <- ldat_test$df$precio_medio_diario - pred_pc_opt
+
+# error cuadratico bastante bajo, es un buen predictor
+mean((residuos)^2)
+
+
+
+# CONCLUSION : Este modelo no pasa los test de hipotesis pero a la hora de predecir lo hace bien
+
+```
+
+
+ Parte 4: Otros modelos funcionales 
+   
+  a. Modelo no paramétrico `fregre.np()` o modelo GAM funcional  `fregre.gsam.vs()`.
+```{r}
+ 
+res.np <- fregre.np.cv(ldat0$carbon, ldat0$df$precio_medio_diario)
+summary(res.np)
+ 
+# Obtenemos un R cuadrado no muy alto (0.61)
+# Viendo los graficos: 
+# homocedasticidad: en el grafico scale-location se ve que los residuos se van comprimiendo mas
+#                   a medida que aumenta la respuesta
+# media cero: en el box plot y en residual vs Fitted.values parece que los residuos tiene media cero
+# Puede que haya presencia de datos atipicos
+# En el Q-Q Plot, parece que hay normalidad
+ 
+plot(res.np$residuals)
+title(main = "Residuos", cex.main = 1)
+ 
+# error cuadratico, es mas bajo que en todos los demas modelos salvo el glm.
+mean((res.np$residuals)^2)
+ 
+# test de media nula
+t.test(res.np$residuals, mu=0)
+# El contraste de media nula sugiere rechazar Ho, p-valor < 0.05
+# No obstante a un 3% de confianza podemos aceptar media nula
+ 
+ 
+# test de independencia
+Box.test(res.np$residuals, lag = 5, type = "Ljung-Box")
+# RECHAZAMOS ALEATORIEDAD
+ 
+ 
+# Normalidad
+ 
+# Test Normalidad
+jarque.bera.test(res.np$residuals)
+shapiro.test(res.np$residuals)
+ 
+# Para un 5% de significacion, tanto JarqueBera como Shapiro sugieren ACEPTAR NORMALIDAD
+# ACEPTAMOS TODAS LAS HIPOTESIS SALVO INDEPENDENDIA DE LOS RESIDUOS
+ 
+# VAMOS A HACER PREDICCIONES CON ESTE MODELO NO PARAMETRICO
+ 
+ 
+# cargamos los datos de 2019
+ 
+load("esio_carbon_2019.rda")
+ldat_test <- ldat
+load("esio_precio_2019.rda")
+ldat_test$precio <- ldat$precio
+ldat_test$df$precio_medio_diario <- rowMeans(ldat_test$precio$data)
+ 
+ 
+# PREDECIMOS CON EL MODELO
+pred_np <- predict(res.np ,ldat_test$carbon)
+ 
+ 
+par(mfrow = c(1, 2))  # Divide la ventana gráfica en 1 fila y 2 columnas
+ 
+y_limits <- range(c(ldat_test$df$precio_medio_diario, pred_np))
+ 
+# Primer gráfico 
+plot(ldat_test$df$precio_medio_diario, ylim = y_limits)
+title(main = "Precio medio real días de x_test", cex.main = 0.5)
+ 
+# Segundo gráfico
+plot(pred_np, ylim = y_limits)
+title(main = "Precio medio predicho días de x_test",cex.main = 0.5)
+ 
+# error cuadratico
+mean((ldat_test$df$precio_medio_diario-pred_np)^2)
+ 
+ 
+# Conclusion: El modelo no paramétrico res.np no explica correctamente la relacion entre 
+#             el precio medio diario del mercado electrico y la generacion de carbon diario
+ 
