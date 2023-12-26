@@ -1,0 +1,399 @@
+---
+title: "ANALISIS DE SUPERVIVENCIA "
+author: "Xoel Montes Varela, Uxío Merino Currás"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+![Universidade Da Coruña](logo.png){ width=3cm }
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+<!--![    ](logo.png){id .class width=25% height=25%}-->
+<!--
+```{r pressure, echo=FALSE, fig.cap="", out.width = '15%'}
+knitr::include_graphics("logo.png")
+```
+-->
+# Información de pacientes de alto riesgo contagiados con gripe
+
+El archivo de datos `gripe.RData` contiene información relativa a un grupo de pacientes de alto riesgo contagiados con gripe. Las variables del archivo son las siguientes:
+
+- **edad:** Edad (años)
+- **sexo:** Sexo (Hombre, Mujer)
+- **tiempo:** Tiempo ingresado (días)
+- **ingreso.previo:** Ingreso previo (0 = no, 1 = sí)
+- **estado:** Estado al final del estudio
+
+  - `Discharge`: Alta
+  - `EXITUS`: Fallecido
+  - `HOS`: Ingresado en planta
+  - `UCI`: Ingresado en UCI
+  
+  
+
+1. Realizar un análisis descriptivo de las variables del estudio y comentar los resultados.
+```{r}
+load("gripe.RData")
+datos <- gripe
+
+summary(datos)
+str(datos)
+
+summary(datos$edad)
+hist(datos$edad)
+```
+La edad media de las observaciones es 70 años.
+En el plot podemos ver la distribución de las edades. 
+Hay pocas observaciones cuando la edad es inferior a 40, la mayoria 
+se concentran entre las edades 60 y 90.
+
+```{r}
+summary(datos$sexo)
+plot(datos$sexo)
+```
+La cantidad de hombres (545) y mujeres (455) es muy similar.
+ 
+```{r}
+summary(datos$tiempo)
+hist(datos$tiempo)
+```
+La media de tiempo ingresado es 12 días.
+La observación que estuvo más tiempo ingresada lo estuvo durante 81 días, sin
+embargo, viendo el histograma parece un caso atípico.
+
+```{r}
+datos$ingreso.previo <- as.factor(datos$ingreso.previo) # convertimos a tipo factor
+summary(datos$ingreso.previo)
+plot(datos$ingreso.previo)
+```
+89 de las 1000 observaciones ya habían ingresado previamente.
+
+```{r}
+datos$estado <- as.factor(datos$estado)   # convertimos a tipo factor
+summary(datos$estado)
+plot(datos$estado)
+```
+De las 1000 aproximaciones:
+
+- 700 dados de alta
+- 154 han fallecido
+- 127 ingresados en planta
+- 19 ingresados en la UCI
+```{r}
+boxplot(edad ~ estado, data = datos, main = "Distribución de Edades por Estado")
+datos_UCI <- datos[datos$estado == 'UCI', ]
+summary(datos_UCI$edad)
+```
+En este gráfico podemos ver la relación de la edad con los distintos estados.
+Los estados EXITUS, HOS y UCI se dan en edades altas.
+Parece que las edades más bajas suelen darse de alta salvo algunos casos de 
+HOS (ingresos en planta).
+Destaca el pequeño rango de edades que hay para el estado UCI, además del
+rango, destaca que no hay edades superiores a los 80.
+ 
+```{r}
+boxplot(edad ~ ingreso.previo, data = datos, 
+        main = "Distribución de Edades por IngresoPrevio")
+```
+En este grafico no hay relación entre la edad e ingreso previo.
+
+```{r}
+library(ggplot2)
+ggplot(datos, aes(x = sexo, fill = ingreso.previo)) +
+  geom_bar(position = "stack") +
+  labs(title = "Relación entre Sexo y Estado", x = "Sexo") +
+  scale_fill_manual(values = c("red", "blue"))
+
+tabla_contingencia <- table(datos$sexo, datos$ingreso.previo)
+prop.table(tabla_contingencia, margin = 1) * 100
+```
+Las observaciones con ingreso previo están más presente cuando la observación
+es un hombre. No obstante, no hay mucha diferencia con las mujeres.
+
+```{r}
+plot(datos$tiempo, datos$edad, xlab = "Tiempo", ylab = "Edad", 
+     col = datos$estado, pch = 8, main = "Tiempo segun edad y estado")
+legend("topright", legend = unique(datos$estado), col = unique(datos$estado)
+       , pch = 8)
+sort(datos_UCI$tiempo)
+```
+Los tiempos más altos están relacionados con edades elevadas.
+Las observaciones HOS (ingresados en planta), la mayoría no llegan a estar ni 
+un día ingresados.
+El tiempo no tiene mucha correlación con el estado EXITUS (fallecido).
+Practicamemte todos los ingresados en UCI tienen tiempos muy superiores a la 
+media. (la media son 12 días ingresados)
+ 
+```{r}
+ggplot(datos, aes(x = sexo, fill = estado)) +
+  geom_bar(position = "stack") +
+  labs(title = "Relación entre Sexo y Estado", x = "Sexo") +
+  scale_fill_manual(values = c("green", "orange", "red", "blue"))
+
+tabla_contingencia2 <- table(datos$sexo, datos$estado)
+prop.table(tabla_contingencia2, margin = 1) * 100
+```
+No hay grandes diferencias de como se distribuye el estado según el sexo.
+Viendo los porcentajes, la probabilidad de que una observacion tenga el estado
+x es muy similar en ambos sexos.
+
+```{r}
+ggplot(datos, aes(x = ingreso.previo, fill = estado)) +
+  geom_bar(position = "stack") +
+  labs(title = "Relación entre ingreso.previo y Estado", x = "ingreso.previo") +
+  scale_fill_manual(values = c("green", "orange", "red", "blue"))
+
+tabla_contingencia3 <- table(datos$ingreso.previo, datos$estado)
+prop.table(tabla_contingencia3, margin = 1) * 100
+```
+En este caso, destaca que, en proporción, menos observaciones fueron dadas
+de alta si tuvieron un ingreso previo. La probabilidad de darse de alta si 
+una observacion tuvo un ingresio previo es un 30% menor que si ingresaran por
+primera vez.
+ 
+```{r}
+plot(datos$tiempo, ylab = "Tiempo", col = datos$sexo, pch = 111,
+     main = "Tiempo segun sexo")
+legend("top", legend = unique(datos$sexo),
+       col = unique(datos$sexo), pch = 111)
+```
+El tiempo ingresando no tiene correlación con el sexo.
+De la observacion 175 a la 300 (aproximadamente) hay una secuencia muy seguida de observaciones 
+cuyo tiempo ingresado es 0 días. 
+ 
+
+
+2. Con el fin de poder estimar la ocupación de camas, se empieza estudiando el tiempo total que
+los pacientes están ingresados en un centro hospitalario, independientemente de si salen por alta o
+porque han fallecido. Representar gráficamente la distribución de dicho tiempo, teniendo en cuenta
+que el tiempo de estancia de los pacientes que permanecían ingresados al final del estudio es un
+tiempo censurado. Comentar.
+
+```{r}
+#' Creamos la variable cens
+#' cens=0= -> el individuo permanece ingresado (censurado)
+#' cens=1 -> el individuo no permanece ingresado
+
+library(survival)
+library(prodlim)
+library(boot) 
+
+datos$cens <- c(rep(0, 1000)) 
+# Los pacientes que salen son datos NO SON censurados
+datos$cens[datos$estado == "Discharge" | datos$estado == "EXITUS"] <- 1
+head(datos)
+
+
+# Ordenamos datos respecto al tiempo:
+datos <- datos[order(datos[, 3]), ]
+
+
+fit.x <- prodlim(Hist(tiempo, cens) ~ 1, data = datos)
+plot(fit.x)
+
+```
+Teniendo en cuenta que el suceso de interés es salir del hospital, es decir, 
+sobrevivir es mantenerse ingresado:
+
+La probabilidad de sobrevivir disminuye claramente con el paso de los días.
+A los díez días de ingreso, la probabilidad de mantenerse ingresado es de un 50 % (aprox.).
+A los quince días de ingreso, la probabilidad de mantenerse ingresado dismiuye a un 25%.
+
+A partir de los 40 días de ingreso, la probabilidad de mantenerse ingresado es muy baja.
+
+3. Se desea estudiar si el tiempo de ingreso de un paciente es mayor en los hombres respecto a las
+mujeres. Para ello, se pide lo siguiente:
+
+ - Representar gráficamente la distribuci´on del tiempo de ingreso de los pacientes, por separado
+  en hombres y mujeres. Comentar.
+```{r}
+riesgo_grupos <- prodlim(Hist(tiempo, cens) ~ sexo, data = datos) 
+
+plot(riesgo_grupos, lty = 1:2, col = 1:2, xlab = "Tiempo", ylab ="Prob de permanecer ingresado")
+legend("bottomleft", legend = c("Hombre","Mujer"), lty = 1:2, col = 1:2, cex = 0.8)
+
+```
+  
+Las líneas de supervivencia son muy parecidas.
+Por ejemplo, el 25% de los hombres (aprox.) se mantienen ingresados al 
+menos 20 días. Por otro lado, en este mismo instante la cantidad de mujeres ingresada
+de un 20% (aprox.).
+Esta diferencia es pequeña pero se mantiene prácticamente en todo el tiempo. 
+Podemos conluir que, en general, las mujeres permanecen menos tiempo ingresadas.
+
+ 
+ 
+ - Representar gráficamente las funciones de riesgo de cada grupo y comentar. ¿Se puede asumir
+  que los riesgos son proporcionales? Contestar gráficamente y en base al correspondiente p-valor.
+```{r}
+library(muhaz)
+
+datos_H <- datos[datos$sexo == 'Hombre', ]
+datos_M <- datos[datos$sexo == 'Mujer', ]
+
+riesgo_H <- muhaz(datos_H$tiempo, datos_H$cens, min.time=0, max.time=max(datos_H$tiempo))
+riesgo_M <- muhaz(datos_M$tiempo, datos_M$cens, min.time=0, max.time=max(datos_M$tiempo))
+
+
+plot(riesgo_H, main= "Funciones de riesgo por grupos", col = "blue", lwd=2, lty = 1,
+     xlim = c(0, 85),
+     ylim = c(0, 0.5))
+lines(riesgo_M, col = "red", lwd = 2, lty = 2)
+legend("top", legend = c("Riesgo Hombres", "Riesgo Mujeres"), 
+       col = c("blue", "red"), lty = c(1, 2), lwd = 2)
+```
+Las curvas de riesgo son bastante parecidas hasta el tiempo 50 (aproximadamente),
+creciendo desde un riesgo bajo y estabilizándose algo a partir del tiempo 10 (aprox), 
+aunque el riesgo de las mujeres parece estar siempre por encima.
+
+Sin embargo, a partir del tiempo 50 se separan bastante, ya que el riesgo de los
+hombres se dispara llegando a riesgos cercanos a 0.4 mientras que el de las mujeres
+decrece hasta llegar prácticamente a 0.
+
+Vamos a comprobar si podemos asumir riesgos proporcionales.
+
+Gráficamente:
+```{r}
+cox_sexo <- coxph(Surv(tiempo, cens) ~ sexo, method = "efron", datos)
+summary(cox_sexo)
+plot(cox.zph(cox_sexo))
+abline(h = cox_sexo$coef, col = "blue")
+```
+El p-valor
+Vemos que beta(t) es constante a lo largo del tiempo y entra dentro de los intervalos
+de confianza, esto nos lleva a intuir que los riesgos son proporcionales. 
+
+
+Vamos a confirmarlo de manera analítica:
+
+```{r}
+zph<-cox.zph(cox_sexo)
+zph
+```
+El p-valor es 0.79, por lo que con cualquier alpha razonable no cabe rechazar la hipótesis
+nula.
+
+En conclusión, ambos resultados concuerdan y conducen a asumir riesgos proporcionales.
+
+  
+ - Contestar las mismas preguntas que en los apartados anteriores del Ejercicio 3 para estudiar si
+  el tiempo de ingreso varía significativamente según si el paciente ha estado ingresado previamente.
+  El efecto en el riesgo   de esa variable, ¿es constante con el tiempo? En caso afirmativo,
+  ¿es un efecto positivo o negativo? En caso contrario, ¿cuándo es un efecto positivo y cuándo
+  es negativo?
+  
+```{r}
+# Representar gráficamente la distribucion del tiempo de ingreso de los 
+# pacientes, por separado según ingreso previo
+
+riesgo_ingreso <- prodlim(Hist(tiempo, cens) ~ ingreso.previo, data = datos) 
+
+plot(riesgo_ingreso, lty = 1:2, col = 1:2, xlab = "Tiempo", ylab = "Prob de permanecer ingresado")
+legend("bottomleft", legend = c("0","1"), lty = 1:2, col = 1:2)
+```
+  En este caso, las curvas parecen bastante diferenciadas.
+  La curva para los pacientes sin ingreso previo mantiene una probabilidad
+  mucho menor de permanecer ingresado, diferenciandose aún más en tiempos medios.
+  También cabe destacar que los pacientes con ingreso previo mantienen hasta el final
+  una probabilidad (pequeña) de mantenerse ingresados, mientras que el final de
+  la curva de supervivencia de los pacientes sin ingreso previo está en torno al 0.
+  
+```{r}
+#Representar gráficamente las funciones de riesgo de cada grupo y comentar. 
+# ¿Se puede asumir que los riesgos son proporcionales?
+
+No_IngrePrev <- datos[datos$ingreso.previo == 0, ]
+Si_IngrePrev <- datos[datos$ingreso.previo == 1, ]
+
+riesgo_0 <- muhaz(No_IngrePrev$tiempo, No_IngrePrev$cens,
+                  min.time=0, max.time=max(No_IngrePrev$tiempo))
+
+riesgo_1 <- muhaz(Si_IngrePrev$tiempo, Si_IngrePrev$cens,
+                  min.time=0, max.time=max(Si_IngrePrev$tiempo))
+
+plot(riesgo_0, main= "Funciones de riesgo por grupos", col = "blue", lwd=2, lty = 1,
+     xlim = c(0, 85),
+     ylim = c(0, 0.5))
+lines(riesgo_1, col = "red", lwd = 2, lty = 2)
+legend("top", legend = c("Sin ingreso previo", "Con ingreso previo"), col = c("blue", "red"), lty = c(1, 2), lwd = 2)
+
+```
+*** La funci´on de riesgo es probabilidad de que si se sobrevive al
+tiempo t, se experimente el evento en el siguiente instante. ***
+
+El riesgo de los pacientes con ingreso previo es muy baja a lo largo de todo el
+tiempo. Esto quiere decir que la probabilidad de salir del hospital para pacientes
+con ingresos previos es muy baja.
+
+Por otro lado, la probabilidad de los pacientes que ingresan por primera vez de salir 
+del hospital crece duranate los primeros días, a partir del dia 10 se mantiene y a 
+partir del día 55 (aprox.) crece mucho.
+
+En todo momento, la probabilidad de salir del hospital es mayor para pacientes 
+sin ingreso previo, disparándose la probabilidad en tiempos finales.
+
+
+Vamos a comprobar si podemos asumir riesgos proporcionales.
+
+Gráficamente:
+
+```{r}
+cox_ingresoPrev <- coxph(Surv(tiempo, cens) ~ ingreso.previo, method = "efron", datos)
+summary(cox_ingresoPrev)
+plot(cox.zph(cox_ingresoPrev))
+abline(h = cox_ingresoPrev$coef, col = "blue")
+```
+En este caso, beta(t) no entra dentro de los límites del intervalo a lo largo de 
+toda la gráfica, por lo que podemos intuir que los riesgo no van a ser proporcionales
+
+
+Vamos a confirmarlo de manera analítica:
+
+```{r}
+zph<-cox.zph(cox_ingresoPrev)
+zph
+```
+El p-valor = 0.0067 nos conduce a rechazar la hipótesis nula de PH.
+Este resultado concuerda con la gráfica, por lo que rechazamos que los riesgos
+sean proporcionales para ambos grupos (pacientes con o sin ingreso previo)
+
+
+En cuanto a considerar el efecto de esta variable, si es constante con el tiempo,
+volvemos de nuevo al gráfico de beta(t).
+
+```{r}
+plot(cox.zph(cox_ingresoPrev))
+abline(a=0, b=0, col = "red")
+```
+
+Vemos que el efecto de esta variable no es constante con el tiempo, ya que crece
+desde tiempos medios hasta el final.
+
+En cuanto a si este efecto es negativo o positivo, vemos que durante la mayor parte
+del tiempo el efecto es negativo, pero llega a valores positivos con el crecimiento
+que sufre y por el que no es constante con el tiempo.
+
+
+4. Estudiar si el efecto que la edad tiene en el tiempo de ingreso es el mismo independientemente del
+sexo del paciente, o es significativamente distinto en los hombres y en las mujeres. Comentar los
+resultados.
+```{r}
+interaccion <- coxph(Surv(tiempo, cens) ~ edad * sexo, data = datos)
+summary(interaccion)
+```
+Para realizar el análisis, introducimos interacciones en el modelo de Cox entre
+as dos variables a considerar, el sexo y la edad. Solo nos vamos a fijar en el 
+p-valor de esta nueva variable, ya que introducir interacciones en el modelo
+puede llevar a conclusiones erróneas sobre las otras variables si estas interacciones
+no son significativas.
+
+Fijando alpha = 0.05, no podemos afirmar que la interacción entre la edad y el 
+sexo sea significativa, ya que tiene su p-valor = 0.2387 > 0.05.
+
+Con este análisis, podemos decir que la edad no afecta de manera significativamente
+distinta a los hombres y a las mujeres a la hora de sufrir el evento de interés.
