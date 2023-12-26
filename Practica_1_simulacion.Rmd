@@ -1,0 +1,142 @@
+---
+title: 'Práctica 1: Simulación'
+author: "Grupo xx"
+date: "TSR 2023/2024"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+Esta práctica debe entregarse en formato pdf, 
+incluyendo el código fuente utilizado, las correspondientes salidas 
+y los comentarios (o interpretaciones de los resultados) pertinentes
+(para ello se recomienda emplear RMarkdown, 
+a partir de un fichero *.Rmd* o un fichero *.R* mediante spin,
+que también debe entregarse).
+
+Se debe establecer la semilla igual al número de grupo multiplicado 
+por 10 (también se recomienda hacerlo antes de cada nueva generación de
+números pseudoaleatorios).
+
+
+## Ejercicio 1
+
+Considerar el generador congruencial definido por: 
+$$\begin{aligned}
+x_{n+1}  & =(4069x_{n}+5)\ \operatorname{mod}\ 4096,\\
+u_{n+1}  & =\frac{x_{n+1}}{4096},\ n=0,1,\dots
+\end{aligned}$$
+    
+a)  Indicar razonadamente si es de ciclo máximo.
+```{r}
+
+```
+
+b)  Generar 1000 valores tomando como semilla inicial el número de grupo
+    multiplicado por 10 y obtener el tiempo de CPU. Representar
+    gráficamente el ajuste a la densidad teórica.
+```{r}
+library(simres)
+system.time(u <- rlcg(1000, seed=40, a = 4069, c = 5, m = 4096) ) 
+hist(u, freq = FALSE)
+abline(h = 1) 
+```
+
+c)  Empleando los valores generados en el apartado anterior, 
+    generar el gráfico de autocorrelaciones y el gráfico de dispersión 
+    retardado (representar los pares de datos $\left( u_{i}, u_{i+1} \right)$), ¿se observa algún problema?
+```{r}
+acf(u, main = "Gráfico de autocorrelacións")
+plot(u[-nsim], u[-1], main = "Gráfico de dispersión retardado")
+```
+
+d)  Estudiar la uniformidad de este generador empleando repetidamente el test de Kolmogorov-Smirnov, considerando 1000 pruebas con muestras de tamaño 100. Comparar el ajuste de la distribución del $p$-valor a la de referencia, empleando métodos gráficos y el contraste chi-cuadrado con 20 intervalos de discretización.
+```{r}
+resultado <- replicate(1000, ks.test(sample(u, 100), "punif", 0, 1))
+```
+
+## Ejercicio 2
+
+Estamos interesados en una variable aleatoria con función de distribución: 
+
+$$F(x)=\left\{
+\begin{array}{ll}
+0 & \text{si } x < 0\\
+\frac{1}{10} + \frac{2}{5}x & \text{si } 0 \le x < 2 \\
+1 & \text{si } x \ge 2
+\end{array}
+\right.$$
+(OJO: no es continua en 0 y en 2).  
+
+a)  Desarrollar el código necesario para generar una muestra de `nsim` observaciones de esta variable aleatoria mediante el método de inversión generalizado.
+```{r}
+inverse<- function(u) {
+  ifelse(u < 1/10, 10 * u, (u - 1/10) * (5/2))
+}
+
+nsim <- 10
+system.time({
+  u <- runif(nsim)
+  sample <- inverse(u)
+})
+sample
+```
+    
+b)  Generar una muestra de 1000 observaciones de esta distribución. 
+    Obtener el tiempo de CPU que tarda en generar la secuencia.
+```{r}
+nsim <- 1000
+system.time({
+  u <- runif(nsim)
+  sample <- inverse(u)
+})
+```
+
+c)  Representar la distribución empírica de los valores generados y compararla con la teórica.
+```{r}
+hist(sample, freq = FALSE,col = "lightblue")
+x_vals <- seq(0, 2, length.out = nsim)
+pdf_vals <- (1/10) + (2/5) * x_vals
+lines(x_vals, pdf_vals, col = "red", lwd = 2)
+```
+
+
+## Ejercicio 3
+
+Estamos interesados en una variable aleatoria con cuasidensidad:
+$$f(x) \propto xe^{-3x}\text{ si }x\geq 0$$
+(implementada en la función `f.cuasi()`).
+    
+    
+a)  Escribir el código necesario para generar, por el método de aceptación-rechazo,
+    una muestra de `nsim` observaciones de esta distribución considerando como 
+    densidad auxiliar una distribución exponencial (funciones `dexp()` y `rexp()`),
+    empleando el parámetro óptimo $\lambda_{opt} = \frac{3}{2}$ y 
+    la cota óptima $\tilde{c}_{opt}=\frac{4}{9e}$.
+    
+    ```{r }
+    f.cuasi <- function(x) ifelse(x < 0, 0, x*exp(-3*x))
+    lambda.opt <- 3/2
+    c.opt <- 4/(9 * exp(1))
+    ```
+
+b)  Aproximar numéricamente el parámetro óptimo ($\lambda_{opt}$) 
+    y la cota óptima ($\tilde{c}_{opt}$) de la densidad auxiliar y
+    compararlos con los valores teóricos.
+
+c)  Generar una muestra de 2000 observaciones de la distribución de interés. 
+    Obtener el tiempo de CPU que tarda en generar la secuencia y calcular 
+    el número medio de generaciones de la distribución auxiliar.
+    
+d)  A partir de la aproximación del número medio de generaciones aproximar la 
+    constante normalizadora y compararla con el valor teórico
+    $\Gamma(2)/3^2 = 1/9$ (i.e. la densidad objetivo es una $Gamma(2,3)$,
+    pero resolver el ejercicio como si no fuese conocida).
+    
+    ```{r }
+    cte.teor <- 1/9
+    ```
+
+e)  Representar la distribución de los valores generados y compararla con la
+    aproximación de la densidad objetivo (empleando la aproximación de
+    la constante normalizadora obtenida en el apartado anterior).
