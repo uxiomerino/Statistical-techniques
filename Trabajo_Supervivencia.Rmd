@@ -382,18 +382,30 @@ que sufre y por el que no es constante con el tiempo.
 4. Estudiar si el efecto que la edad tiene en el tiempo de ingreso es el mismo independientemente del
 sexo del paciente, o es significativamente distinto en los hombres y en las mujeres. Comentar los
 resultados.
+
+Empezamos observando el modelo aditivo:
+```{r}
+aditivo <- coxph(Surv(tiempo, cens) ~ edad + sexo, data = datos)
+summary(aditivo)
+```
+Ambas variables son significativas con nuestro alpha, por lo que podemos pasar a
+trabajar con el modelo de interacciones para confirmar si estas son o no 
+significativas:
+
 ```{r}
 interaccion <- coxph(Surv(tiempo, cens) ~ edad * sexo, data = datos)
 summary(interaccion)
 ```
+
 Para realizar el análisis, introducimos interacciones en el modelo de Cox entre
-as dos variables a considerar, el sexo y la edad. Solo nos vamos a fijar en el 
+las dos variables a considerar, el sexo y la edad. Solo nos vamos a fijar en el 
 p-valor de esta nueva variable, ya que introducir interacciones en el modelo
 puede llevar a conclusiones erróneas sobre las otras variables si estas interacciones
 no son significativas.
 
 Fijando alpha = 0.05, no podemos afirmar que la interacción entre la edad y el 
 sexo sea significativa, ya que tiene su p-valor = 0.2387 > 0.05.
+Debido a esto, el modelo correcto sería el aditivo, sin tener en cuenta las interacciones.
 
 Con este análisis, podemos decir que la edad no afecta de manera significativamente
 distinta a los hombres y a las mujeres a la hora de sufrir el evento de interés.
