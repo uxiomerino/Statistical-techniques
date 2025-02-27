@@ -1,0 +1,208 @@
+---
+title: "Métodos Non Paramétricos"
+author: "Uxio Merino"
+date: "2025-01-02"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Exercicio proposto parte A: Métodos de distribución libre
+
+Evaluar empíricamente la conducta de las pruebas de bondad de ajuste de Kolmogorov-Smirnov, Cramér-von Mises y Anderson-Darling para detectar diferentes desviaciones de una normal estándar.
+
+(a) Generar 500 m.a.s. de tamañoo n = 30 de la distribución elegida.
+(b) Evaluar los tres estadísticos para cada muestra y calcular la frecuencia relativa de rechazos al nivel de significación alpha = 0.05.
+(c) Analizar los p-valores con cada prueba, incluyendo gr´aficos (histogramas, diagramas de caja,. . . ), estadísticos descriptivos y un análisis comparativo. Comentar los resultados.
+(d) ¿Sabrías elaborar una función que ejecutase los pasos anteriores para (n, theta, alpha) arbitrarios, siendo theta = mu, sigma o g según el caso elegido?
+(e) Comprobar que la probabilidad de error de tipo I de las pruebas se mueve en torno a alpha = 0.05 empleando ahora 500 m.a.s. de tamaño n = 30 de la N(0, 1). Realizar un análisis semejante a la evaluación de los p-valores.
+
+
+Como o apartado e) xa pide a realización dunha función para automatizar o proceso de avaliación, imos comezar por construir dita función e utilizala para todos os apartados:
+```{r}
+library(stats)
+library(goftest)
+
+avaliacion <- function(N, n, distrib = "norm", mu = 0, sigma = 1, g = NULL, alpha = 0.05) {
+  ks <- numeric(N)
+  cvm <- numeric(N)
+  ad <- numeric(N)
+  
+  set.seed(32725752)
+  
+  for (i in 1:N){
+    
+    if (distrib == "norm") x <- rnorm(n, mu, sigma)
+    
+    else  x <- rt(n, g)
+    
+    ks[i] <- (stats::ks.test(x = x, y = "pnorm")$p.value)
+    cvm[i] <- (goftest::cvm.test(x = x, null = "pnorm")$p.value)
+    ad[i] <- (goftest::ad.test(x = x, null = "pnorm")$p.value)
+    
+  }
+  
+  cat("Frecuencia de rexeites para Kolmogorov-Smirnov", sum(ks<alpha)/length(ks), "\n")
+  cat("Frecuencia de rexeites para Cramer-von Mises", sum(cvm<alpha)/length(cvm), "\n")
+  cat("Frecuencia de rexeites para Anderson-Darling",sum(ad<alpha)/length(ad), "\n")
+  
+  par(mfrow = c(2, 3))
+  hist(ks, breaks = 20, main = "KS Test", xlab = "p-values", col = "lightblue")
+  abline(v = 0.05, col = "red")
+  hist(cvm, breaks = 20, main = "CVM Test", xlab = "p-values", col = "lightgreen")
+  abline(v = 0.05, col = "red")
+  hist(ad,breaks = 20, main = "AD Test", xlab = "p-values", col = "lightpink")
+  abline(v = alpha, col = "red")
+  boxplot(ks, main = "KS Test", col = "lightblue")
+  boxplot(cvm, main = "CVM Test", col = "lightgreen")
+  boxplot(ad, main = "AD Test", col = "lightpink")
+}
+```
+
+Realizamos a primera avaliación, neste caso seguindo o caso proposto: N(mu, 1) para algún 0 < mu <= 0.5.
+```{r}
+N <- 500
+n <- 30
+
+avaliacion(N, n, mu = 0.5) # Avaliación para unha N(0.5, 1)
+```
+
+Vemos como a frecuencia de rexeites é elevada en todos os casos, sendo un 66,4% do test de Kolmogorov-Smirnov a máis baixa de todas as probas. A taxa para Anderson-Darling chega incluso a superar o 75% de probas rexeitadas, un valor bastante grande. 
+
+Visualizando os histogramas, vemos como para todas as probas o intervalo con máis ocurrencia é, con moita diferenza, a rexión de rexeite (entre 0 e 0.5). A partir daí, os valores baixan a medida que aumenta o p-valor, ata valores superiores a 0.4, onde prácticamente non se deron sucesos.
+
+Tendo en conta o contraste que estamos a realizar, onde a hipótese nula postula que os datos proveñen dunha N(0, 1) mentres que as mostras foron obtidas dunha N(0.5, 1), estes resultados demostran que as probas funcionan ben, xa que dita hipótese nula efectivamente non é correcta.
+
+
+
+Mostramos a continuación o correcto fucionamento da nosa función para os outros casos propostos no enuncado. En primeiro lugar, para unha t de Student con g graos de liberdade:
+```{r}
+avaliacion(N, n, "t", g = 13)
+```
+
+E a continuación, unha normal N(0, sigma):
+```{r}
+avaliacion(N, n, sigma = 0.5)
+```
+
+Utilizamos agora a función para mostrar a probabilidade de erro de tipo I. Para isto, sinxelamente simulamos valores da N(0, 1), que coincide coa hipótese nula, e comprobamos que a taxa de rexeites debería aproxirmar ao valor de alpha (0.05).
+```{r}
+# Deixando os valores por defecto da normal (mu=0, sigma=1) comprobamos o apartado e)
+avaliacion(N, n)
+```
+
+Efectivamente, o número de veces que se rexeitou a hipótese nula (a pesar de ser certa) foi aproximadamente 0.05 para as tres probas. De novo, as tres probas realizaron un bo traballo, neste caso rexeitando poucas veces a proba.
+
+## Parte B):
+
+### (a) Estimar la densidad de la variable “porcentaje de graduados en secundaria que se presentan al SAT” (percent) con: (i) un histograma con origen en la media de la variable y ancho de clase 9, (ii) estimadores núcleo con selectores de banda obtenidos por la regla del dedo, la regla plug-in de Sheater-Jones y por validación cruzada (chequear que se minimiza adecuadamente la función de validación cruzada), y (iii) el mejor ajuste normal. Mostrar todos los ajustes en un único gráfico y comentar los resultados.
+```{r}
+library(KernSmooth)
+library(sm)
+library(ks)
+
+load("~/MUTE/Métodos Non Paramétricos/Práctica/Datos_Propuesta_Ejercicios_Parte_II.RData")
+percent <- States$percent
+
+# (a-i) Histograma
+x0 <- mean(percent)
+h <- 9
+
+breaks <- function(x,x0,h){
+  b <- floor((min(x)-x0)/h) : ceiling((max(x)-x0)/h)
+  b <- b*h+x0
+  return(b)
+}
+
+hist(percent, freq = FALSE, breaks = breaks(percent, x0, h), 
+     col = "lightblue", border = "pink", xlab = "Percent", 
+     ylab = "Densidade", main = "Histograma de Percent")
+
+# (a-ii) Estimadores núcleo
+bw_finger <- bw.nrd(percent)
+bw_plugin <- dpik(percent)
+bw_cv <- bw.ucv(percent)
+
+dens_finger <- density(percent, bw = bw_finger)
+dens_plugin <- density(percent, bw = bw_plugin)
+dens_cv <- density(percent, bw = bw_cv)
+
+# (a-iii) Mellor axuste normal
+curve(dnorm(x, mean = mean(percent), sd = sd(percent)), col = "purple", 
+      add = TRUE, lwd = 2)
+
+lines(dens_finger, col = "red", lwd = 2)
+lines(dens_plugin, col = "blue", lwd = 2)
+lines(dens_cv, col = "green", lwd = 2)
+legend("top", legend = c("Regra do dedo", "Plug-in SJ", "Validación cruzada", 
+                         "Axuste normal"), col = c("red", "blue", "green", "purple"), lwd = 2)
+```
+Vemos como o mellor axuste normal é incapaz de capturar a bimodalidade da variable, o cal é lóxico e esperable.
+A validación cruzada parece presentar bastante varianza, xa que en torno ao valor 50 de percent vemos que o axuste fluctúa bastante e prácticamente no subestima o valor do primeiro pico.
+A regra do dedo sofre do efecto contrario, presentando moito sesgo e pouca varianza. Subestima bastante os picos e sobreestima o val entre ambos.
+Por último, o plug-in de SJ parece ser o que mellor axusta o histograma da variable 'Percent'. Presenta un bo balance entre sesgo e varianza, sen caer en variacións espurias.
+
+### (b) Chequear gráfica y analíticamente si difieren significativamente las funciones de densidad de las variables SATV y SATM, es decir las distribuciones de las calificaciones medias del SAT en lengua y matem´aticas. Comentar los resultados.
+
+```{r}
+SATV <- States$SATV
+SATM <- States$SATM
+
+# Densidades
+dens_SATV <- density(SATV)
+dens_SATM <- density(SATM)
+
+# Gráfico
+plot(dens_SATV, col = "red", lwd = 2, main = "Comparación SATV e SATM", 
+     xlab = "Puntuación SAT")
+lines(dens_SATM, col = "blue", lwd = 2)
+legend("topright", legend = c("SATV", "SATM"), col = c("red", "blue"), lwd = 2)
+
+# Test analítico
+ks.test(SATV, SATM, alternative = "greater")
+```
+
+Gráficamente, xa podemos intuir que ambas distribucións difieren bastante. Aínda que a forma de ambas pode ser similar, presentando dous picos (bimodal) onde o primeiro parece lixeiramente superior, a distribución de SATM parece estar desprazada cara a dereita. É dicir, as notas en matemáticas son superiores ás notas en lingua.
+Plantexamos unha hipótese alternativa unilateral coa intención de verificar que, efectivamente, a distribución das notas en matemáticas é superior ca de lingua. Ao devolver un p-valor moi baixo, confirmamos a nosa teoría e rexeitamos a hipótese nula de que ambas distribucións sexan iguais.
+
+
+### (c) Ajustar la regresión SATM = m(dollars) con estimadores locales lineal y cúbico y el algoritmo loess. Obtener entonces las predicciones para SATM con cada uno de estos estimadores sobre los cuartiles muestrales de dollars.
+```{r}
+dollars <- States$dollars
+SATM <- States$SATM
+
+bw <- dpill(dollars, SATM)  # Ancho de banda óptima do axuste lineal
+
+RPL.p1 <- locpoly(dollars, SATM, degree = 1, bandwidth = bw) # Estimador local lineal
+RPL.p3 <- locpoly(dollars, SATM, degree = 3, bandwidth = 1.5) # Estimador local cúbico
+est_loess <- loess(SATM ~ dollars, span = 1) # Axuste LOESS
+
+# Predicciones nos cuartis de dollars
+quartiles <- quantile(dollars, probs = c(0.25, 0.5, 0.75))      
+pred_linear <- approx(RPL.p1$x, RPL.p1$y, xout = quartiles)$y
+pred_cubic <- approx(RPL.p3$x, RPL.p3$y, xout = quartiles)$y     
+pred_loess <- predict(est_loess, newdata = data.frame(dollars = quartiles))
+
+# Gráfica dos axustes
+plot(dollars, SATM, pch = 20, col = "gray", xlab = "Dollars", ylab = "SATM", main = "Axustes de regresión")
+lines(RPL.p1, col = "red", lwd = 2)
+lines(RPL.p3, col = "blue", lwd = 2)
+lines(dollars[order(dollars)], predict(est_loess)[order(dollars)], col = "green", lwd = 2)
+legend("topright", legend = c("Lineal", "Cúbico", "LOESS"), 
+       col = c("red", "blue", "green"), lwd = 2)
+
+# Mostrar as predicciones nos cuartis
+predicciones <- data.frame(
+  Cuartil = c("25%", "50%", "75%"),
+  Predicción_Lineal = pred_linear,
+  Predicción_Cúbica = pred_cubic,
+  Predicción_LOESS = pred_loess
+)
+print(predicciones)
+```
+
+Todos os axustes gráficos son bastante parecidos, diferenciandose sobre todo o proporcionado polo axuste cúbico na segunda metade do rango de Dollars, onde parece proporcionar estimacións máis baixas ca os outros dous estimadores (para finalmente volver superalos no último tramo). Entre o axuste LOESS e o lineal apenas existen diferenzas.
+
+Observando as predicións concretas nos cuartís, vemos como o estimador lineal sempre proporciona a estimación maior. As predicións son especialmente cercanas na mediana, onde se atopan na mesma unidade.

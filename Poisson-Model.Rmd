@@ -1,0 +1,422 @@
+---
+title: "Regresión Generalizada y Modelos Mixtos"
+author: "Uxio Merino, Xoel Montes & Borja Souto"
+date: "2024-15-02"
+subtitle: "TAREA DE EVALUACIÓN CONTINUA DE LOS TEMAS 1-3"
+lang: es
+output: 
+  pdf_document: 
+    number_sections: false
+    fig_caption: yes
+  html_document: 
+    number_sections: false
+    fig_caption: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(Ecdat)
+library(ggplot2)
+library(MASS)
+library(lmtest)
+```
+
+## 1. Conseguir una base de datos reales que contenga una posible variable respuesta de conteo y al menos dos variables explicativas.
+
+Para la realización de esta práctica hemos seleccionado la base de datos "Doctor" de la librería Ecdat. Esta base de datos dispone de 485 observaciones y esta formada por 4 variables que aportan diferente información sobre el número de visitas al médico que realizan individuos en Estados Unidos.
+
+```{r echo=FALSE}
+data("Doctor")
+head(Doctor) 
+```
+
+La variable "doctor", de tipo int, representa el número de visitas al doctor, por lo que podemos tratarla como la variable de respuesta de conteo. La variable "children" representa el número de niños en el hogar. Aunque esta variable es de tipo entero, solo toma 8 diferentes valores, como se puede observar en la Figura 1, por lo que la trataremos como un factor en lugar de tratarla como una variable continua. Las variables "access" y "health", ambas continuas, representan una medida de acceso a la atención sanitaria, y una medida del estado de salud (donde valores altos representan peor salud), respectivamente.
+
+```{r echo=FALSE, fig.lab="barplot1", out.width='60%', fig.align='center', fig.cap='Barplot de los recuentos de los distintos valores del número de niños en el hogar.'}
+barplot(table(Doctor$children), col="skyblue", main="Número de niños en el hogar")
+```
+
+## 2. Formular el modelo de regresión de Poisson que permita explicar la variable respuesta de conteo en función de al menos dos variables explicativas. ¿Qué información nos aportan los coeficientes estimados?
+
+```{r}
+modelo <- glm(doctor ~ as.factor(children) + access + health,
+              family = poisson(link=log),
+              data = Doctor)
+
+exp_coeficientes <- round(exp(modelo$coefficients), 4)
+
+
+exp_coef_df <- as.data.frame(exp_coeficientes)
+exp_coef_df
+```
+
+```{r echo=FALSE, fig.width=10, fig.height=5, fig.cap='Barplot de coeficientes exponenciados del modelo de Poisson.'}
+
+barplot(exp_coeficientes, 
+        main = "Coeficientes exponenciados del modelo de Poisson", 
+        ylab = "Exp(Coeficientes)", 
+        col = "skyblue", 
+        ylim = c(0, max(exp_coeficientes) * 1.2),
+        names.arg = c("(Intercept)", "children2", "children3", "children4", 
+                      "children5", "children6", "children7", "children9", 
+                      "access", "health"),
+        las = 2)
+abline(h = 1, col = "red")
+```
+
+Mostramos el exponente de los coeficientes de las variables explicativas para obtener
+información de las mismas (graficados en la Figura 2). En este gráfico incluimos además
+una línea horizontal en el 1, que representaría el umbral a partir del cual el efecto de 
+la variable aumenta o disminuye la respuesta esperada.
+
+El intercept muestra la respuesta esperada cuando las variables explicativas toman
+su valor base: 0 para las variables continuas (health y access) y children1 para la
+categórica (que representa tener un único hijo). Así, para 1 hijo y valores 0 de 
+access y health se espera una media de visitas de 1.283.
+
+Para todos los niveles de hijos, las visitas al médico disminuyen con respecto 
+al nivel base, ya que los coeficientes de todos los niveles son menores que 1. 
+Vemos también que las visitas disminuyen a medida que aumenta el número de hijos, ya que
+los coeficientes disminuyen progresivamente con el número de hijos, aunque este patrón no se
+mantiene en el caso de tener seis hijos.
+
+Por otro lado, ambas variables continuas tienen coeficientes mayores que uno. Un
+mayor acceso a la sanidad (variable access) multiplica la asistencia al médico 
+por 2.55, mientras que un peor nivel de salud (mayor valor en la variable health)
+incrementa la frecuencia de visitas al médico en 1.334 veces.
+
+## 3. Construir un intervalo de confianza para los parámetros del modelo de nivel 97% basado en el profile likelihood. Interpretar el resultado obtenido.
+
+Para construir un intervalo de confianza basado en el profile likelihood utilizamos la función confint de R.
+
+```{r}
+confint_beta <- confint(modelo, level = 0.97)
+ 
+```
+
+```{r echo=FALSE, out.width='75%', fig.align='center',fig.cap='Intervalos de confianza basados en el profile likelihood de los parámetros del modelo.'}
+#confint_expbeta <- exp(confint_beta)
+
+#confint_beta
+#confint_expbeta
+
+# Mostrar los resultados
+confint_beta <- data.frame(Lower97 = confint_beta[,1],
+                 Upper97 = confint_beta[,2])
+
+colnames(confint_beta)[1] <- "1.5%"
+colnames(confint_beta)[2] <- "98.5%"
+
+#confint_asint
+
+( confint_exp <- exp(confint_beta) )
+
+#confint_df <- as.data.frame(confint_exp)
+confint_exp$Variable <- rownames(confint_exp)
+
+
+confint_exp$Coefficient <- exp_coeficientes  # coeficientes del modelo anterior
+
+colnames(confint_exp) <- c("1.5%", "98.5%", "Variable", "Coefficient")
+
+ggplot(confint_exp, aes(x = Variable, y = Coefficient)) +
+  geom_point(size = 3, color = "blue") +  # pintar coeficientes del modelo
+  geom_errorbar(aes(ymin = `1.5%`, ymax = `98.5%`), width = 0.2, color = "red") +  
+  coord_flip() + 
+  labs(title = "Intervalos de confianza (profile likelihood)",
+       x = "Variable",
+       y = "Valor del Coeficiente (escala exponencial)") +
+  theme_minimal()
+```
+
+En la Figura 3 se representan gráficamente los intervalos de confianza obtenidos para los parámetros del modelo, basado en el profile likelihood. 
+
+### Interpretación de los Intervalos de Confianza
+
+Obtenemos un aviso de que el ajuste del modelo enfrenta dificultades numéricas. Esto es debido a la baja 
+frecuencia de datos en el nivel 9 de la variable `children`. Esto se refleja en que el intervalo de confianza
+asociado a este nivel contiene únicamente valores iguales a cero, indicando que el modelo no ha estimado 
+correctamente su efecto. Este problema será tratado más adelante.
+
+En cuanto a los demás intervalos, observamos lo siguiente:
+
+#### Variable `children`
+- Para los niveles 2 al 5, ninguno de los intervalos de confianza incluye al valor 1. Esto indica, con un nivel de confianza del 97%, que estos niveles están asociados con una disminución significativa en el número de visitas al médico en comparación con el nivel base (tener un único hijo).  
+- Para los niveles 6 y 7, los intervalos sí incluyen al valor 1, por lo que no podemos asegurar que estos niveles tengan un efecto significativo en las visitas al médico respecto al nivel base. Esto se confirma con los p-valores obtenidos en el `summary` del modelo interpretados en el apartado 5. 
+
+#### Variable `access`
+El intervalo de confianza está completamente por encima del 1, lo que indica que un mayor acceso a la sanidad incrementa significativamente las visitas al médico. A un nivel de confianza del 97%, las visitas aumentan entre 1.68 y 3.89 veces por cada unidad de incremento en esta variable. El intervalo es de gran tamaño, lo que quiere decir que se ha tenido que abrir mucho el rango para asegurar la presencia del coeficiente en él a este nivel de confianza.
+
+#### Variable `health`
+Al igual que `access`, el intervalo de confianza de esta variable está por encima del 1. Esto implica que un peor nivel de salud está asociado con un incremento significativo en las visitas al médico. A este nivel de confianza, dicho incremento se encuentra entre 1.28 y 1.39 veces por unidad de aumento en la variable. Cabe destacar que este intervalo es muy pequeño, lo que indica mucha confianza sobre la localización del coeficiente.
+
+
+## 4.  Construir un intervalo de confianza para los parámetros de nivel 97% basado en la distribución asintótica de los estimadores. Interpretar el resultado obtenido comparándolo con el obtenido en el apartado anterior. En general, ¿qué intervalo es más recomendable?
+
+```{r}
+coeficientes <- coef(summary(modelo))[, "Estimate"]
+errores_est <- coef(summary(modelo))[, "Std. Error"]
+
+# Valor crítico para 97%
+z_critical <- qnorm(1 - 0.015)
+
+# Intervalos de confianza
+confint_lower <- coeficientes - z_critical * errores_est
+confint_upper <- coeficientes + z_critical * errores_est
+```
+
+```{r echo=FALSE,out.width='75%', fig.align='center', fig.cap='Comparación de los intervalos de confianza de los parámetros obtenidos mediante ambos métodos.'}
+# Mostrar los resultados
+confint_asint <- data.frame(Lower97 = confint_lower,
+                 Upper97 = confint_upper)
+
+colnames(confint_asint)[1] <- "1.5%"
+colnames(confint_asint)[2] <- "98.5%"
+
+#confint_asint
+
+confint_asint_exp <- exp(confint_asint)
+
+
+confint_asint_df <- as.data.frame(confint_asint_exp)
+confint_asint_df$Variable <- rownames(confint_asint_exp)
+
+
+confint_asint_df$Coefficient <- exp_coeficientes  # coeficientes del modelo
+
+colnames(confint_asint_df) <- c("1.5%", "98.5%", "Variable", "Coefficient")
+
+# Crear un nuevo dataframe para los intervalos de confianza obtenidos con el método asintótico
+confint_asint_df$Method <- "Asintótico"
+
+# Crear un dataframe con los intervalos de confianza del método exacto
+confint_exp_df <- confint_exp[, c(1, 2)]
+confint_exp_df$Variable <- rownames(confint_exp_df)
+confint_exp_df$Coefficient <- exp_coeficientes  # coeficientes del modelo
+confint_exp_df$Method <- "profile likelihood"
+
+# Cambiar nombres de las columnas para uniformidad
+colnames(confint_asint_df) <- c("1.5%", "98.5%", "Variable", "Coefficient", "Metodo")
+colnames(confint_exp_df) <- c("1.5%", "98.5%", "Variable", "Coefficient", "Metodo")
+
+# Unir ambos dataframes
+confint_combined <- rbind(confint_asint_df, confint_exp_df)
+
+# Asignar una posición en el eje y para diferenciar los métodos
+confint_combined$y_position <- ifelse(confint_combined$Metodo == "Asintótico", 0, 1)
+
+# Graficar los intervalos de confianza de ambos métodos
+ggplot(confint_combined, aes(x = Variable, y = Coefficient, color = Metodo, group = Metodo)) +
+  geom_point(size = 3, position = position_dodge(width = 0.5)) +  # Dibujar los coeficientes con desplazamiento
+  geom_errorbar(aes(ymin = `1.5%`, ymax = `98.5%`), width = 0.2, position = position_dodge(width = 0.5)) +  # Dibujar los intervalos de confianza
+  coord_flip() + 
+  labs(title = "Comparación de Intervalos de Confianza",
+       x = "Variable",
+       y = "Valor del Coeficiente (escala exponencial)") +
+  scale_color_manual(values = c("blue", "red")) +  # Personalizar colores
+  theme_minimal()
+
+```
+
+### Comparación de Intervalos de Confianza
+
+En la Figura 4 se comparan gráficamente los intervalos de confianza obtenidos mediante el profile likelihood y mediante la distribución asintótica de los estimadores.
+
+Podemos observar que los intervalos obtenidos mediante ambos métodos son muy similares en varias de las variables. Sin embargo, se aprecian diferencias notables en los intervalos para los niveles 5, 6 y 7 de la variable `children`. Los intervalos creados utilizando la distribución asintótica de los estimadores son menos precisos, ya que son más largos, destacando especialmente el intervalo para el nivel children7.
+
+
+El conjunto de datos contiene 485 observaciones, pero los niveles de la variable `children` no están balanceados. A medida que aumenta el número de hijos, el número de observaciones por nivel disminuye considerablemente:
+
+```{r echo=FALSE}
+
+table(Doctor$children)
+```
+
+A partir del nivel 5 de la variable `children`, el número de observaciones por grupo es inferior a 20, lo que afecta la precisión de los intervalos obtenidos.
+
+La distribución asintótica es adecuada cuando se dispone de suficientes datos (>30 observaciones por nivel). En estos casos, el teorema central del límite asegura que los estimadores se distribuyen normalmente, garantizando intervalos precisos. Sin embargo, en niveles con pocos datos (como `children` 5, 6, 7 y 9), los intervalos asintóticos tienden a ser más amplios y menos precisos debido a la mayor incertidumbre en las estimaciones.
+
+Para estos niveles con pocos datos, los intervalos basados en el profile likelihood resultan más fiables.
+
+En resumen, cuando hay suficientes observaciones, los intervalos asintóticos y exactos tienden a coincidir, pero con muestras pequeñas los intervalos asintóticos son más imprecisos, mientras que los basados en el profile likelihood ofrecen estimaciones más confiables.
+
+
+## 5. Analizar la significación de los coeficientes del modelo de regresión de Poisson ajustado en el apartado 2. Si fuera necesario, reconsidera el modelo ajustado.
+
+```{r}
+summary(modelo)
+```
+
+Con el modelo ajustado en el apartado 2, hemos observado que el intercept, las variables `health`, `access` y los primeros 4 niveles de la variable `children` son significativos, con un nivel de confianza del 95%.
+
+Sin embargo, los últimos niveles de la variable `children` (niveles 6, 7 y 9) no son significativos (p-valores > 0.05). A primera vista, esto sugiere que el número de visitas al doctor no difiere significativamente entre las observaciones con un único hijo y las observaciones con 6, 7 o 9 hijos. No obstante, esta interpretación es errónea.
+
+Como hemos identificado previamente, en estos niveles de la variable `children` y en el nivel 5, que sí resultó significativo, tenemos pocos datos. Este bajo número de observaciones lleva a interpretaciones y cálculos incorrectos de los coeficientes.
+
+
+Para solventar esta situación, creamos un grupo artificial denominado "5+" donde agrupamos las observaciones de los niveles menos representados de `children` (niveles 5, 6, 7 y 9). Este grupo tiene un total de 30 observaciones, lo que proporciona una cantidad suficiente de datos para obtener una mejor estimación del coeficiente asociado.
+
+A continuación, ajustamos el modelo correspondiente.
+
+
+```{r}
+datos <- Doctor
+datos[datos$children >= 5, "children"] <- "5+" 
+
+table(datos$children)
+
+modelo2 <- glm(doctor ~ children + access + health, family = poisson(link=log), data = datos)
+summary(modelo2)
+```
+Realizando la transformación de los datos obtenemos que todas las variables son significativas.
+
+Ahora, el nivel children5+ también es significativo, lo cual resulta más razonable: si tener 
+2 hijos es signficativamente distinto de tener 1, cabe pensar que tener 5 o más
+también lo sea. 
+
+Además, a mayor nivel de la variable children, menor es el coeficiente, 
+lo que nos indica que la respuesta disminuye a medida que aumentan los hijos. Sin
+embargo, esta disminución no es lineal, es decir, el cambio en el efecto esperado
+al pasar de 2 a 3 hijos no es el mismo que al pasar de 3 a 4. Esto nos sugiere
+que tratar la variable children como factor y no como continua fue una decisión acertada.
+
+Los coeficientes y la significación de las demás variables no se han visto alteradas 
+por la transformación.
+
+Podemos observar también una ligera disminución del AIC respecto al del anterior modelo.
+
+Expresamos la ecuación del modelo de Poisson en función de los coeficientes obtenidos al ajustar el modelo: 
+
+\[
+\lambda(x, \beta) = e^{\beta_0 + \sum_{k=1}^{4} \beta_k \cdot I_k + \beta_5 \cdot \text{access} + \beta_6 \cdot \text{health}}
+\]
+
+Donde \(I_k\) es una función de activación que toma el valor 1 en el nivel que corresponda. Es decir, si un individuo tiene 2 hijos únicamente
+será distinto de 0 (tomando valor 1) la variable \(I_1\), activando el coeficiente \(\beta_1\) correspondiente.
+
+## 6. Ajustar un nuevo modelo de regresión de Poisson que considere como única variable explicativa. Representar dicho ajuste. Si comparamos este modelo con el ajustado en el apartado 2, ¿cuál de los dos modelos recomendarías utilizar? Justifica tu respuesta.
+
+Tomamos como única variable explicativa en este caso la variable health, por ser
+la más significativa (según el modelo anterior) de todas las que disponemos.
+
+```{r}
+modelo3 <- glm(doctor ~ health, data = datos, family = poisson(link=log))
+anova(modelo3, modelo)
+```
+Rechazamos el modelo más sencillo en favor del modelo ajustado en el apartado 2.
+
+```{r}
+anova(modelo3, modelo2)
+```
+
+También rechazamos el modelo más sencillo en favor del modelo ajustado anteriormente (juntando niveles de hijos).
+
+
+En la Figura 5 mostramos gráficamente el ajuste, viendo como aumentan las visitas para mayores valores de la variable health.
+
+```{r echo=FALSE,  out.width='70%', fig.align='center', fig.cap='Diagrama de dispersión del número de visitas al médico frente al estado de salud, acompañado del ajuste del modelo log-lineal de Poisson.'}
+beta.gorro <- modelo3$coefficients
+plot(main="Ajuste del modelo de Poisson (doctor ~ health)", datos$health, datos$doctor, xlab="Estado de salud",ylab="Visitas al doctor")
+curve(exp(beta.gorro[1]+beta.gorro[2]*x), col="blue", lwd=2, add=TRUE)
+```
+
+
+## 7. Testear el cumplimiento de las hipótesis asociadas al modelo ajustado en el apartado 2. Contrasta la necesidad de considerar un modelo con variable respuesta binomial negativa.
+
+
+###  Chequeo de los residuos.
+
+Debido al mejor rendimiento obtenido con el modelo ajustado en el apartado 5, se testean el cumplimiento de las hipótesis de los residuos obtenidos con este mejor modelo.
+
+
+```{r}
+
+# Calcular residuos
+residuos_brutos <- residuals(modelo2, type = "response")   # Residuos brutos
+residuos_pearson <- residuals(modelo2, type = "pearson")   # Residuos de Pearson
+residuos_deviance <- residuals(modelo2, type = "deviance") # Residuos de la deviance
+
+# Predicciones
+predicciones <- predict(modelo2, type = "response")  # Valores ajustados
+pred_lineales <- predict(modelo2, type = "link")     # Predictors lineales
+
+```
+
+```{r echo=FALSE, out.width='75%', fig.align='center', fig.cap='Diagramas de dispersión de diferentes tipos de residuos en el modelo de Poisson ajustado en el apartado 5.'}
+
+# Crear gráficos con base R
+par(mfrow = c(2, 2)) # Disposición 2x2
+
+# Residuos brutos vs predicciones
+plot(residuos_brutos ~ predicciones, pch = 16, col = "grey", 
+     main = "Residuos brutos", cex.main=0.8, xlab = "Predicciones", ylab = "Residuos brutos")
+
+# Residuos de Pearson vs predicciones
+plot(residuos_pearson ~ predicciones, pch = 16, col = "grey", 
+     main = "Residuos de Pearson", cex.main=0.8, xlab = "Predicciones", ylab = "Residuos de Pearson")
+
+# Residuos de la deviance vs prediccionesa
+plot(residuos_deviance ~ predicciones, pch = 16, col = "grey", 
+     main = "Residuos de la deviance", cex.main=0.8, xlab = "Predicciones", ylab = "Residuos de la deviance")
+
+# Residuos de la deviance vs predictores lineales
+plot(residuos_deviance ~ pred_lineales , pch = 16, col = "grey", 
+     main = "Residuos deviance vs. predictores lineales", cex.main=0.8, xlab = "Predictores lineales", 
+     ylab = "Residuos de la deviance")
+
+```
+
+
+En la Figura 6 podemos observar los diagramas de dispersión de los diferentes tipos de residuos del modelo. Aunque los residuos brutos no tendrían por qué ser homocedásticos, ni presentar distribución simétrica entorno a cero, los residuos de Pearson y los de la Deviance deberían presentar un aspecto más homogéneo. Sin embargo, como observamos en las gráficas, estos residuos no son homocedásticos, su dispersión es globalmente excesiva, muy superior a la que cabría esperar para valores estandarizados. Esto se debe al fenómeno de sobre-dispersión.
+
+```{r echo=FALSE,out.width='70%', fig.align='center', fig.cap='Gráficos producidos por la función plot de R para el modelo de Poisson ajustado en el apartado 5.'}
+par(mfrow = c(2, 2))
+plot(modelo2)
+```
+En la Figura 7 obtenemos los gráficos producidos por la función plot de R para el modelo de Poisson ajustado en el apartado 5.
+
+En el primer plot (arriba izquierda), se observa que los residuos tienen media constante centrada en cero. 
+
+Por otro lado, en el tercer gráfico (abajo izquierda) los residuos muestran una tendencia creciente. La línea roja tiene pendiente, lo cual sugiere que la varianza de los residuos no es constante, es decir, los residuos no son homocedásticos. Esto es un signo de sobre-dispersión, un problema común en los modelos de Poisson. 
+
+El modelo de Poisson asume que tenemos media igual a varianza. Sin embargo, como podemos observar a continuación, tenemos una varianza muy superior a la media, lo que de nuevo apoya el hecho de que tenemos sobre-dispersión en los datos.
+
+```{r echo=FALSE}
+cat("Media = ",mean(datos$doctor), "\n")
+cat("Varianza = ",var(datos$doctor))
+```
+
+### Modelo con variable respuesta binomial negativa.
+
+Dado que el modelo de Poisson no es adecuado para datos con sobre-dispersión, ajustamos un modelo de regresión Binomial Negativa. Este modelo permite una mayor flexibilidad al incluir un parámetro adicional ($\theta$) que controla la dispersión de los datos.
+
+```{r}
+modelo.BN <- glm.nb(doctor~children+access+health,link=log, data = datos)
+
+summary(modelo.BN)
+```
+
+
+Comparamos los modelos mediante lrtest, que realiza un test de razón de verosimilitudes.
+
+```{r}
+lrtest(modelo2, modelo.BN)
+```
+
+El p-valor obtenido es extremadamente pequeño, lo que indica que el modelo Binomial Negativo ajusta significativamente mejor los datos en comparación con el modelo de Poisson.
+
+```{r echo=FALSE,out.width='70%', fig.align='center', fig.cap='Gráficos producidos por la función plot de R para el modelo Binomial Negativo ajustado.'}
+par(mfrow = c(2, 2))
+plot(modelo.BN)
+```
+En la Figura 8 obtenemos los gráficos producidos por la función plot de R para el modelo Binomial Negativo.
+
+Utilizando el modelo de regresión Binomial Negativa, en el tercer plot la línea roja es ahora horizontal, lo que sugiere que la varianza de los residuos es constante (homocedasticidad).
+Por otro lado, los residuos tienen media centrada en cero, lo cual es consistente con los supuestos del modelo.
+
+
+En conclusión, el análisis de los residuos del modelo de Poisson evidenció problemas de sobre-dispersión, reflejados en una varianza muy superior a la media.
+El ajuste del modelo Binomial Negativo resolvió el problema de sobre-dispersión, mejorando el ajuste global y cumpliendo las hipótesis sobre los residuos.
+El test de razón de verosimilitudes confirmó que el modelo Binomial Negativo es significativamente superior al modelo de Poisson.
+Por lo tanto, se concluye que el modelo Binomial Negativo es más adecuado para estos datos.
