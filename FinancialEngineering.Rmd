@@ -1,0 +1,1265 @@
+---
+title: "Proyecto Ingeniería Financiera"
+author: "Xoel Montes Varela, Uxío Merino Currás"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: false
+    toc_depth: 3
+  pdf_document:
+    toc: true
+    number_sections: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Importamos los datos
+
+Comenzamos importando los datos de `Unicaja Banco` desde el 1 de enero de 2010 hasta el 7 de septiembre de 2025 utilizando la biblioteca `quantmod`. Esta operación carga una serie de tiempo con múltiples variables, de la cual extraemos específicamente la serie de precios ajustados al cierre (UNI.MC.Adjusted).
+
+```{r, message=FALSE}
+library("quantmod")
+
+getSymbols("UNI.MC",from="2010-01-01",to="2025-09-07")
+```
+
+Obtenemos un aviso advirtiendo de la presencia de nulos en nuestros datos.
+
+```{r}
+UNI.MC$UNI.MC.Adjusted[is.na(UNI.MC$UNI.MC.Adjusted)]
+```
+
+Hay un dato faltante en la fecha 2018-09-20.
+
+
+Vemos los primeros valores de la serie de precios ajustados al cierre:
+
+```{r, echo=FALSE}
+UNICAJA_prices <- UNI.MC$UNI.MC.Adjusted
+head(UNICAJA_prices)
+```
+
+```{r, echo=FALSE}
+n_UNICAJA <- length(UNICAJA_prices)
+# UNICAJA_prices[n_UNICAJA]
+```
+
+
+Visualizamos la evolución temporal de nuestra serie financiera:
+```{r, echo=FALSE, fig.align='center', fig.width=7, fig.height=4}
+par(cex = 0.8)
+plot(UNICAJA_prices,type="l",
+     main="Precio ajustado de las acciones de Unicaja Banco",
+     xlab="Fecha",ylab="Precio ajustado")
+
+```
+
+Se observa una ligera subida inicial seguida de una bajada y posteriormente se aprecia una continua tendencia creciente la cual se acentúa en el tramo final. Este comportamiento se corresponde con una serie no estacionaria, no hay media ni variabilidad constante.
+
+
+
+## Cálculo de rendimientos simples y log-rendimientos
+
+A continuación, obtenemos los rendimientos simples y log-rendimientos de nuestra serie financiera:
+
+```{r}
+UNICAJA_rs <- Delt(UNICAJA_prices)
+UNICAJA_rs <- UNICAJA_rs[-1] 
+
+UNICAJA_lr <- Delt(UNICAJA_prices,type="log")
+UNICAJA_lr <- UNICAJA_lr[-1] 
+
+any(is.na(UNICAJA_rs))
+any(is.na(UNICAJA_lr))
+```
+
+Como ya sabíamos tenemos datos faltantes (2018-09-20). Vamos a imputarlo utilizando la media:
+
+```{r}
+mean_UNICAJA_rs <- mean(UNICAJA_rs,na.rm=T)
+UNICAJA_rs[which(is.na(UNICAJA_rs))] <- mean_UNICAJA_rs
+
+mean_UNICAJA_lr <- mean(UNICAJA_lr,na.rm=T)
+UNICAJA_lr[which(is.na(UNICAJA_lr))] <- mean_UNICAJA_lr
+
+mean_UNICAJA_rs
+mean_UNICAJA_lr
+```
+
+La media de los rendimientos simples y de los log-rendimientos es prácticamente cero.
+
+Visualizamos la evolución temporal de los rendimientos simples y log-rendimientos:
+```{r, echo=FALSE, fig.align='center', fig.width=7, fig.height=4}
+par(mfrow=c(2,1))
+plot(UNICAJA_rs,type="l",main="Rendimientos simples para UNICAJA", ylim=c(-0.25, 0.25))
+plot(UNICAJA_lr,type="l",main="Log-rendimientos para UNICAJA", ylim=c(-0.25, 0.25))
+```
+
+A simple vista, los rendimientos simples y los log-rendimientos de Unicaja Banco no muestran diferencias apreciables. 
+
+Se observa un salto positivo registrado el 12 de diciembre de 2018, que coincide con los rumores de una posible fusión entre la entidad y Liberbank ([Unicaja y Liberbank estudian una fusión](https://www.elconfidencial.com/empresas/2018-12-12/unicaja-y-liberbank-estudian-una-fusion-y-ampliar-capital_1700602)).
+
+Durante los meses de 2020, se observa un período de alta volatilidad. Esta fase de alta turbulencia en el precio de la acción está claramente asociada al contexto de incertidumbre global y especulación en los mercados financieros provocado por la pandemia del COVID-19. Tras esta etapa, el año 2021 se caracterizó por una notable estabilización.
+
+Esta calma relativa se interrumpió en 2022, con un nuevo repunte de la volatilidad concurrente con el estallido de la guerra en Ucrania, que generó una nueva oleada de incertidumbre en los mercados. Además, en el primer trimestre del 2025, la serie muestra un pico negativo pronunciado, atribuible al anuncio de la imposición de nuevos aranceles por parte de Estados Unidos.
+
+Realizamos un resumen numérico de los log-rendimientos:
+```{r, echo=FALSE}
+library(moments)
+
+media     <- mean(UNICAJA_lr)
+varianza  <- var(UNICAJA_lr)
+asimetria <- moments::skewness(UNICAJA_lr)
+curtosis  <- moments::kurtosis(UNICAJA_lr)
+
+# Crear tabla resumen
+resumen_lr <- data.frame(
+  Media = media,
+  Varianza = varianza[1],
+  Asimetría = asimetria,
+  Curtosis = curtosis
+)
+rownames(resumen_lr) <- "Log-rendimientos de UNICAJA"
+print(resumen_lr, digits = 6)
+```
+
+
+## Estimación kernel de la densidad de los log-rendimientos
+
+En el siguiente gráfico analizamos la estimación kernel de la densidad de los log-rendimientos:
+
+```{r, echo=FALSE, fig.align='center', fig.width=6, fig.height=3}
+par(cex = 0.8)
+kd_UNICAJA_lr <- density(UNICAJA_lr)
+hist(UNICAJA_lr, main="Densidad kernel para log-rendimientos de UNICAJA", breaks = "FD", freq = FALSE,
+     xlab="Log-rendimientos",ylab="")
+lines(kd_UNICAJA_lr$x,kd_UNICAJA_lr$y,type='l',lwd=2,col="black")
+```
+
+Podemos ver que se distribuyen en torno al cero y de manera simétrica. En la cola izquierda se observa algún valor extremo.
+
+Podemos ajustar la mejor normal para ver si nuestros datos son gaussianos:
+
+```{r, echo=FALSE, fig.align='center', fig.width=6, fig.height=3}
+par(cex = 0.8)
+hist(UNICAJA_lr, main="Densidad kernel para log-rendimientos de UNICAJA", breaks = "FD", freq = FALSE,
+     xlab="Log-rendimientos",ylab="")
+lines(kd_UNICAJA_lr$x,kd_UNICAJA_lr$y,type='l',lwd=2,col="black")
+normal <- dnorm(kd_UNICAJA_lr$x,mean(UNICAJA_lr),sd(UNICAJA_lr))
+lines(kd_UNICAJA_lr$x,normal,type="l",col="deepskyblue2",lwd=2,xlab="",ylab="")
+
+legend("topright", 
+       legend = c("Densidad Kernel", "Distribución Normal"),
+       col = c("black", "deepskyblue2"),
+       lwd = 2,
+       bty = "n")
+
+```
+
+Podemos ver que los datos no se ajustan bien a la normal ajustada. La estimación kernel es más apuntalada, es decir, más datos concentrados sobre la media con colas menos pesadas que la mejor normal ajustada.
+
+Probamos utilizando una mixtura de guassianas:
+
+```{r, echo=FALSE, fig.align='center', fig.width=6, fig.height=3, message=FALSE}
+par(cex = 0.8)
+library(mixtools)
+mixfit_2 <- normalmixEM(UNICAJA_lr, k=2)
+
+hist(UNICAJA_lr, main="Densidad kernel con Gaussiana y mixturas de Gaussianas", breaks = "FD", freq = FALSE,
+     xlab="Log-rendimientos", ylab="")
+lines(kd_UNICAJA_lr$x, kd_UNICAJA_lr$y, type='l', lwd=2, col="black")
+
+lines(kd_UNICAJA_lr$x, normal, type="l", col="deepskyblue2", lwd=2, xlab="", ylab="")
+
+mix_2 <- mixfit_2$lambda[1] * dnorm(kd_UNICAJA_lr$x, mixfit_2$mu[1], mixfit_2$sigma[1]) + 
+  mixfit_2$lambda[2] * dnorm(kd_UNICAJA_lr$x, mixfit_2$mu[2], mixfit_2$sigma[2])
+lines(kd_UNICAJA_lr$x, mix_2, type="l", col="indianred2", lwd=2, xlab="", ylab="")
+
+mixfit_3 <- normalmixEM(UNICAJA_lr, k=3)
+
+mix_3 <- mixfit_3$lambda[1] * dnorm(kd_UNICAJA_lr$x, mixfit_3$mu[1], mixfit_3$sigma[1]) + 
+  mixfit_3$lambda[2] * dnorm(kd_UNICAJA_lr$x, mixfit_3$mu[2], mixfit_3$sigma[2]) + 
+  mixfit_3$lambda[3] * dnorm(kd_UNICAJA_lr$x, mixfit_3$mu[3], mixfit_3$sigma[3])
+lines(kd_UNICAJA_lr$x, mix_3, type="l", col="seagreen2", lwd=2, xlab="", ylab="")
+
+# Leyenda
+legend("topright", 
+       legend = c("Kernel", 
+                  "Normal", 
+                  "Mixtura 2 componentes", 
+                  "Mixtura 3 componentes"),
+       col = c("black", "deepskyblue2", "indianred2", "seagreen2"),
+       lwd = 2,
+       bty = "n")
+
+```
+
+Tanto la mixtura de dos componentes como la de tres se aproximan bastante bien a la densidad kernel. Esto sugiere que 2 componentes pueden ser suficientes para modelar estos datos.
+
+A continuación, analizamos las autocorrelaciones simples de los log-rendimientos:
+
+```{r, echo=FALSE, fig.align='center', fig.width=7, fig.height=4, message=FALSE}
+par(mfrow=c(1,2), cex=0.7)
+acf(UNICAJA_lr, main="ACF de log-rendimientos")
+acf(UNICAJA_lr^2, main="ACF de log-rendimientos al cuadrado")
+```
+
+Por un lado, las autocorrelaciones entre rendimientos son pequeñas, siendo muchas de ellas no significativas. Esto implica que los rendimientos pasados no contienen información útil para predecir los rendimientos futuros.
+
+ 
+Por otro lado,  los rendimientos al cuadrado parecen presentar mayores autocorrelaciones. Se observan varias autocorrelaciones significativas, sugeriendo que períodos de alta o baja variabilidad se agrupan en el tiempo.
+
+## Contrastes de Ljung-Box 
+
+Realizamos contrastes de Ljung-Box sobre los log-rendimientos y los log-rendimientos al cuadrado para los 10 primeros lags: 
+
+```{r, echo=FALSE}
+resultados_box <- data.frame(
+  Lag = 1:10,
+  log_r = numeric(10),
+  log_r_cuadrado = numeric(10)
+)
+
+
+for(i in 1:10) {
+  test_log <- Box.test(UNICAJA_lr, lag = i, type = "Ljung-Box")
+  test_cuadrado <- Box.test(UNICAJA_lr^2, lag = i, type = "Ljung-Box")
+  
+  resultados_box$log_r[i] <- test_log$p.value
+  resultados_box$log_r_cuadrado[i] <- test_cuadrado$p.value
+}
+
+rownames(resultados_box) <- NULL
+print(resultados_box, digits = 6)
+```
+Los contrastes de Ljung-Box aplicados a los log-rendimientos revelan dependencia en algunos de los retardos. Mientras que para el primer retardo el p-valor se sitúa ligeramente por encima del umbral de significación del 5%, lo que sugiere una posible independencia a corto plazo, desde el segundo hasta el quinto retardo se detecta una dependencia significativa.
+
+En cuanto a los log-rendimientos al cuadrado, se observa dependencia significativa en todos los lags analizados, ya que todos los p-valores son muy inferiores a 0.05. Esto indica la presencia de heterocedasticidad condicional en la serie.
+
+
+## Efecto leverage
+
+Pasamos a analizar el efecto leverage. Este efecto hace referencia al diferente comportamiento de los rendimientos futuros al cuadrado en función del signo de los rendimientos pasados. En particular, el mercado puede reaccionar de manera distinta cuando el rendimiento anterior es grande y positivo o grande y negativo.
+
+En la práctica, la volatilidad tiende a aumentar cuando los precios bajan, es decir, cuando los rendimientos pasados son muy negativos. Dado que este efecto es difícil de apreciar directamente en la serie de rendimientos, una forma habitual de analizarlo es mediante un gráfico de los rendimientos frente a sus valores futuros a un paso al cuadrado.
+
+En dicho gráfico, la presencia del efecto leverage se manifiesta si los valores de los rendimientos futuros al cuadrado son, en general, más elevados cuando los rendimientos pasados son negativos que cuando son positivos.
+
+```{r, echo=FALSE, fig.align='center', fig.width=7, fig.height=4, message=FALSE}
+UNICAJA_1 <- as.vector(UNICAJA_lr$Delt.1.log[1:(n_UNICAJA-2)])
+UNICAJA_2 <- as.vector(UNICAJA_lr$Delt.1.log[2:(n_UNICAJA-1)])
+plot(UNICAJA_1,UNICAJA_2^2,pch=20,col="deepskyblue2",xlab="Log-rendimientos",
+     ylab="Log-rendimientos siguientes al cuadrado")
+```
+
+La escasez de valores extremos en la serie de rendimientos dificulta la identificación de un patrón diferenciado entre rendimientos pasados positivos y negativos.
+
+Como consecuencia, no se observa que los rendimientos futuros al cuadrado tomen valores sistemáticamente más elevados cuando los rendimientos pasados son negativos que cuando son positivos. Por tanto, con la información proporcionada por este gráfico, no es posible concluir la presencia del efecto leverage en la serie analizada.
+
+## Modelo ARMA
+
+Debido a los resultados obtenidos en los contrastes de Ljung-Box junto con el análisis del gráfico de autocorrelaciones, ajustamos un modelo ARMA para la media condicional de los log-rendimientos. Para ello empleamos la función `auto.arima`.
+
+```{r, message=FALSE}
+library(forecast)
+
+UNICAJA_lr_arma <- auto.arima(UNICAJA_lr,d=0,seasonal=FALSE,ic="bic")
+summary(UNICAJA_lr_arma)
+```
+
+Inicialmente optamos por el criterio BIC, ya que tiende a seleccionar modelos más parsimoniosos, mientras que el AIC suele incluir un número excesivo de parámetros. Sin embargo, en este caso concreto, el BIC no selecciona ningún parámetro (ruído blanco), mientras que el AIC elige un modelo AR(2), que no resulta excesivamente complejo y concuerda con nuestro análisis. Por este motivo, decidimos revisar nuestro criterio inicial.
+
+```{r}
+UNICAJA_lr_arma <- auto.arima(UNICAJA_lr,d=0,seasonal=FALSE,ic="aic")
+summary(UNICAJA_lr_arma)
+```
+
+Al comparar las log-verosimilitudes de ambos modelos, el ARMA(0,0) con 4990.29 y el ARMA(2,0) con 4995.26, observamos que el segundo modelo presenta un mejor ajuste. Por ello, en esta ocasión utilizaremos el criterio AIC para la selección del modelo.
+
+Pasamos a corregir los log-rendimientos en media por el efecto del AR(2).
+
+
+```{r, echo=FALSE, fig.align='center', fig.width=7, fig.height=4}
+par(mfrow=c(2,1), cex=0.7)
+plot(UNICAJA_lr,type="l",main="Log-rendimientos para UNICAJA", ylim=c(-0.25, 0.25))
+res_UNICAJA_lr <- UNICAJA_lr
+res_UNICAJA_lr[,1] <- UNICAJA_lr_arma$residuals
+plot(res_UNICAJA_lr,xlab="",ylab="",ylim=c(-0.25, 0.25),main="Log-rendimientos corregidos por media de UNICAJA")
+```
+
+Vemos que los log-rendimientos corregidos son muy similares a los anteriores, indicando que el efecto del AR(2) no es muy grande.
+
+Comprobamos, a través del ACF y test Ljung-Box, que los log-rendimientos no presentan ningún problema.
+
+```{r, echo=FALSE}
+resultados_box <- data.frame(
+  Lag = 1:10,
+  log_r = numeric(10),
+  log_r_cuadrado = numeric(10)
+)
+
+
+for(i in 1:10) {
+  test_log <- Box.test(res_UNICAJA_lr, lag = i, type = "Ljung-Box")
+  test_cuadrado <- Box.test(res_UNICAJA_lr^2, lag = i, type = "Ljung-Box")
+  
+  resultados_box$log_r[i] <- test_log$p.value
+  resultados_box$log_r_cuadrado[i] <- test_cuadrado$p.value
+}
+
+rownames(resultados_box) <- NULL
+print(resultados_box, digits = 6)
+```
+
+```{r, echo=FALSE, fig.align='center', fig.width=7, fig.height=4, message=FALSE}
+par(mfrow=c(1,2), cex=0.7)
+acf(res_UNICAJA_lr, main="ACF de log-rendimientos corregidos")
+acf(res_UNICAJA_lr^2, main="ACF de log-rendimientos al cuadrado corregidos")
+```
+
+
+En el gráfico ACF todas las correlaciones de los log-rendimientos corregidos son muy cercanas a 0. 
+
+Los resultados del test de Ljung-Box para los log-rendimientos de UNICAJA indican ausencia de autocorrelación significativa, todos los p-valores son muy superiores a 0.05. Esta evidencia justifica la aplicación de un modelo ARMA(2,0) para capturar la dinámica en la media de los log-rendimientos.
+
+Sin embargo, dado que los modelos ARMA convencionales asumen varianza constante, el modelo no logra capturar la dinámica de la volatilidad presente en la serie. Esta limitación se manifiesta claramente al aplicar el test de Ljung-Box a los residuos al cuadrado, donde la hipótesis nula de independencia es sistemáticamente rechazada para todos los retardos analizados.
+
+Debido a que la autocorrelación en los cuadrados de los residuos es un indicador directo de heterocedasticidad condicional no modelada, complementamos la especificación ARMA con un proceso que modele explícitamente la evolución temporal de la volatilidad.
+
+
+## Modelo ARCH
+
+El primero de los modelos de heterocedasticidad condicional que vamos a ajustar es el modelo ARCH. Para ello necesitamos ver hasta que retardo tenemos correlaciones en los log-rendimientos al cuadrado.
+
+```{r, echo=FALSE, fig.align='center', fig.width=7, fig.height=3, message=FALSE}
+par(cex=0.7)
+pacf(res_UNICAJA_lr^2,main="PACF de log-rendimientos corregidos al cuadrado")
+```
+
+Se observan retardos muy altos con correlación significativa. Inicialmente nos quedamos con los 9 primeros retardos e intentaremos reducir este valor para conseguir un modelo más parsimonioso.
+
+Ajustamos el modelo ARCH inicial, incluyendo el modelo ARMA(2,0) para la media de los log-rendimientos.
+
+```{r, message=FALSE}
+library(rugarch)
+
+UNICAJA_ARCH_spec <- ugarchspec(variance.model=list(model="sGARCH",garchOrder=c(9,0)),
+                                mean.model<-list(armaOrder=c(2,0), include.mean=F),
+                                distribution.model="norm")
+UNICAJA_ARCH <- ugarchfit(data=UNICAJA_lr,spec=UNICAJA_ARCH_spec)
+UNICAJA_ARCH
+```
+
+El segundo de los parámetros autorregresivos no es significativo, por lo que redefinimos nuestro modelo para la media con un AR(1).
+
+En cuanto a los parámetros del modelo ARCH, el noveno sí que es significativo, pero hay valores intermedios que no lo son, por lo que vamos a reducir el tamaño del modelo a sólo 4. Pasamos de un AR(2)-ARCH(9) a un modelo más sencillo AR(1)-ARCH(4).
+
+```{r}
+UNICAJA_ARCH_spec <- ugarchspec(variance.model=list(model="sGARCH",garchOrder=c(4,0)),
+                                mean.model<-list(armaOrder=c(1,0),include.mean=F),
+                                distribution.model="norm")
+UNICAJA_ARCH <- ugarchfit(data=UNICAJA_lr,spec=UNICAJA_ARCH_spec)
+UNICAJA_ARCH
+```
+
+Ahora, todos los p-valores son signficativos, y en los contrastes de Ljung-Box para los residuos estandarizados y los estandarizados al cuadrado aceptamos la hipótesis de independencia, es un modelo válido.
+
+
+De acuerdo con los coeficientes estimados, los impactos de volatilidad no son inmediatos. Los shocks más antiguos (de hace 3 y 4 periodos) tienen mayor peso (18.58% y 20.84%) que los recientes (9.66% y 7.86%), sugiriendo que la volatilidad tarda en materializarse completamente.
+
+En conjunto, los cuatro rezagos incluidos en el modelo ARCH capturan aproximadamente el 57% de la dinámica de la volatilidad.
+
+
+
+```{r, echo=FALSE, fig.height=6, fig.width=7, fig.align='center', message=FALSE}
+par(mfrow=c(2,2), cex=0.7)
+plot(UNICAJA_ARCH,which=8)
+plot(UNICAJA_ARCH,which=9)
+plot(UNICAJA_ARCH,which=10)
+plot(UNICAJA_ARCH,which=11)
+```
+
+Las autocorrelaciones de los residuos estandarizados y estandarizados al cuadrado no son significativas, al menos en los primeros valores. No se observa normalidad en los residuos estandarizados.
+
+Visualizamos los residuos estandarizados y la volatilidad de los log-rendimientos ajustados con el modelo ARCH:
+
+```{r, echo=FALSE, fig.align='center', fig.width=7, fig.height=4, message=FALSE}
+par(mfrow=c(2,1), cex=0.7)
+plot(residuals(UNICAJA_ARCH)/sigma(UNICAJA_ARCH),main="Residuos estandarizados con ARCH",
+     ylim=c(-7, 7))
+UNICAJA_ARCH_vol <- sigma(UNICAJA_ARCH)^2
+plot(UNICAJA_ARCH_vol,type="l",xlab="",ylab="", main="Volatilidad de los log-rendimientos con ARCH", ylim=c(0, 0.014))
+```
+
+Al estandarizar los residuos, observamos una mejora en la homocedasticidad. Más allá de ciertos picos, los residuos parecen homocedásticos.
+
+La volatilidad condicional estimada mediante el modelo ARCH(4) presenta picos pronunciados que se disipan rápidamente, retornando en pocos periodos a niveles bajos. Este comportamiento indica una persistencia limitada de la volatilidad, con efectos concentrados en torno a shocks individuales más que en episodios prolongados de alta volatilidad. Este patrón es característico de los modelos ARCH, que suelen requerir un número elevado de retardos para aproximar adecuadamente la persistencia observada en series financieras, lo que constituye una de sus principales limitaciones.
+
+Este resultado sugiere que, aunque el modelo ARCH captura la heterocedasticidad condicional, no reproduce de forma eficiente la persistencia temporal de la volatilidad, lo que motiva el uso de modelos GARCH más parsimoniosos, capaces de generar trayectorias de volatilidad más suaves y persistentes.
+
+Representamos las predicciones de log-rendimientos y volatilidades futuras:
+
+```{r, echo=FALSE, fig.align='center', fig.width=7, fig.height=6, message=FALSE}
+par(mfrow=c(2,1), cex=0.7, mar=c(3, 4, 2, 2) + 0.1)
+predict_UNICAJA_ARCH <- ugarchforecast(UNICAJA_ARCH,n.ahead=5)
+
+plot(predict_UNICAJA_ARCH,which=1)
+plot(predict_UNICAJA_ARCH,which=3)
+```
+La predicción de los rendimientos futuros tiende a 0 muy rapidamente cuando el horizonte de predicción crece, mientras que las predicciones de la volatilidad mantenienen el mismo patrón que los últimos valores estimados previamente.
+
+Las prediciones tendientes a 0 se explican debido a la escasa dependencia temporal capturada por el modelo AR(1) en la ecuación de la media, lo que las hace de poca utilidad práctica.
+
+## Modelo GARCH
+
+Probaremos ahora el segundo modelo de heterocedasticidad condicional, el modelo GARCH. Inicialmente, ajustaremos el modelo GARCH (1, 1), ya que un número muy importante de series de log-rendimientos se ajustan bien con este modelo. Mantenemos el modelo para la media resultante del ARCH anterior, un AR(1).
+
+```{r}
+UNICAJA_GARCH_spec <- ugarchspec(variance.model=list(model="sGARCH",garchOrder=c(1,1)),
+                               mean.model<-list(armaOrder=c(1,0),include.mean=F),
+                               distribution.model="norm")
+UNICAJA_GARCH <- ugarchfit(data=UNICAJA_lr,spec=UNICAJA_GARCH_spec)
+UNICAJA_GARCH
+```
+
+Todos los parámetros, salvo el autorregresivo, salen significativos. Procedemos a eliminar el modelo para la media:
+
+```{r}
+UNICAJA_GARCH_spec_1 <- ugarchspec(variance.model=list(model="sGARCH",garchOrder=c(1,1)),
+                               mean.model<-list(armaOrder=c(0,0),include.mean=F),
+                               distribution.model="norm")
+UNICAJA_GARCH_1 <- ugarchfit(data=UNICAJA_lr,spec=UNICAJA_GARCH_spec_1)
+UNICAJA_GARCH_1
+```
+
+Ahora, todos los parámetros son significativos. Sin embargo, los contrastes de Ljung-Box para los residuos estandarizados resultan significativos en este último modelo, indicando dependencia.
+
+Se evaluaron modelos más complejos, como GARCH(2,1) y GARCH(1,2) (ambos sin componente autorregresivo en la media), pero ninguno superó las pruebas de independencia. Por ello, se opta por mantener el primer modelo especificado, a pesar de que el parámetro autorregresivo AR(1) presenta una significancia límite (p-valor = 0.06). Este modelo, no obstante, sí cumple con los requisitos de independencia.
+
+En el modelo ar(1)-GARCH(1,1), la volatilidad actual depende en gran medida de la volatilidad pasada. En particular, el coeficiente asociado a los shocks recientes al cuadrado es relativamente pequeño (0.055), mientras que el coeficiente autorregresivo de la varianza es muy elevado (0.93). Esto implica que, aunque los shocks influyen directamente en la volatilidad, su efecto inmediato es limitado y se transmite principalmente a través de la propia volatilidad, de modo que los efectos de los shocks se transmiten y se disipan lentamente a lo largo del tiempo.
+
+
+```{r, echo=FALSE, fig.height=6, fig.width=7, fig.align='center', message=FALSE}
+par(mfrow=c(2,2), cex=0.7)
+plot(UNICAJA_GARCH,which=8)
+plot(UNICAJA_GARCH,which=9)
+plot(UNICAJA_GARCH,which=10)
+plot(UNICAJA_GARCH,which=11)
+```
+
+Volvemos a tener una distribución no normal de los residuos estandarizados y autocorrelaciones no significativas, de manera muy similar al anterior modelo.
+
+```{r, echo=FALSE, fig.align='center', fig.width=7, fig.height=4, message=FALSE}
+par(mfrow=c(2,1), cex=0.7)
+plot(residuals(UNICAJA_GARCH)/sigma(UNICAJA_GARCH),main="Residuos estandarizados con GARCH",
+     ylim=c(-7, 7))
+UNICAJA_GARCH_vol <- sigma(UNICAJA_GARCH)^2
+
+plot(UNICAJA_GARCH_vol,type="l",xlab="",ylab="",
+     main="Volatilidad de los log-rendimientos con GARCH", ylim=c(0, 0.014))
+```
+
+Los rendimientos parecen muy similares a los obtenidos con el modelo ARCH.
+
+En el segundo gráfico, los episodios de mayor volatilidad se concentran en los primeros meses de 2020, coincidiendo con el periodo de la pandemia de COVID-19. En comparación con el modelo ARCH, la volatilidad estimada mediante el modelo GARCH presenta trayectorias más suaves, con picos menos pronunciados y una mayor persistencia temporal. El modelo GARCH logra capturar de forma más adecuada el agrupamiento de la volatilidad, mostrando periodos prolongados de elevada volatilidad seguidos de una disipación gradual.
+
+```{r, echo=FALSE, fig.align='center', fig.width=7, fig.height=6, message=FALSE}
+par(mfrow=c(2,1), cex=0.7, mar=c(3, 4, 2, 2) + 0.1)
+predict_UNICAJA_GARCH <- ugarchforecast(UNICAJA_GARCH,n.ahead=5)
+
+plot(predict_UNICAJA_GARCH,which=1)
+plot(predict_UNICAJA_GARCH,which=3)
+```
+
+Las predicciones de los log-rendimientos se comportan de forma similar a las obtenidas con el modelo ARCH, convergiendo rápidamente a cero a medida que aumenta el horizonte de predicción.
+
+En cambio, la volatilidad predicha bajo el modelo GARCH presenta un comportamiento distinto. A diferencia del modelo ARCH, la volatilidad es una función suave que no continúa la tendencia descendente observada al final de la muestra, sino que se estabiliza en los niveles anteriores. Este patrón es característico de los modelos GARCH, en los que la volatilidad tiende a suavizarse y estabilizarse debido a la elevada persistencia del proceso.
+
+## Modelo iGARCH
+
+Pasamos ahora a ajustar un modelo iGARCH. Este modelo es una variante del modelo GARCH donde la suma de los parámetros (alfa + beta) es igual a 1, lo que indica que los shocks de volatilidad persisten permanentemente.
+
+Seguiremos el mismo procedimiento que con el GARCH, comenzando con un modelo AR(1)-iGARCH(1,1)
+```{r, echo=FALSE}
+UNICAJA_iGARCH_spec <- ugarchspec(variance.model=list(model="iGARCH",garchOrder=c(1,1)),
+                               mean.model<-list(armaOrder=c(1,0),include.mean=F),
+                               distribution.model="norm")
+UNICAJA_iGARCH <- ugarchfit(data=UNICAJA_lr,spec=UNICAJA_iGARCH_spec)
+UNICAJA_iGARCH
+```
+
+Ni el parámetro autorregresivo ni omega son significativos. Procedemos a eliminar el AR(1) para la media y a fijar el omega a cero, pero este nuevo modelo no pasó los test de independencia. Las hipótesis del modelo iGARCH son muy fuertes y hacen que no sea válido. Se concluye que la volatilidad de los datos presenta una reversión a la media que el modelo iGARCH es incapaz de modelar.
+
+```{r, value=FALSE}
+UNICAJA_iGARCH_spec_fixed <- ugarchspec(
+  variance.model = list(model = "iGARCH", garchOrder = c(1, 1)),
+  mean.model = list(armaOrder = c(0,0), include.mean = FALSE),
+  distribution.model = "norm",
+  fixed.pars = list(omega = 0)
+)
+
+UNICAJA_iGARCH_fixed <- ugarchfit(data = UNICAJA_lr, spec = UNICAJA_iGARCH_spec_fixed)
+UNICAJA_iGARCH_fixed
+```
+
+Para predecir vamos a utilizar el modelo que pasa los test de independencia, a pesar de tener parámetros no significativos:
+```{r, echo=FALSE, fig.align='center', fig.width=7, fig.height=6, message=FALSE}
+par(mfrow=c(2,1), cex=0.7, mar=c(3, 4, 2, 2) + 0.1)
+predict_UNICAJA_iGARCH <- ugarchforecast(UNICAJA_iGARCH,n.ahead=5)
+
+plot(predict_UNICAJA_iGARCH,which=1)
+plot(predict_UNICAJA_iGARCH,which=3)
+```
+
+Las predicciones de los log-rendimientos y volatilidades futuras son muy similares a las obtenidas con el modelo GARCH.
+
+Pasamos ahora a ajustar modelos que tengan en cuenta el efecto leverage.
+
+## Modelo eGARCH
+
+Comenzamos con un modelo EGARCH(1, 1) con un modelo AR(1) para la media de los log-rendimientos:
+
+```{r, echo=F}
+UNICAJA_EGARCH_spec <- ugarchspec(variance.model=list(model="eGARCH",garchOrder=c(1,1)),
+                               mean.model<-list(armaOrder=c(1,0),include.mean=F),
+                               distribution.model="norm")
+
+UNICAJA_EGARCH <- ugarchfit(data=UNICAJA_lr,spec=UNICAJA_EGARCH_spec)
+UNICAJA_EGARCH
+```
+
+El modelo pasa los test de independencia, pero el coeficiente autorregresivo no es significativo, por lo que probamos a excluirlo del modelo. Sin embargo, al hacerlo, el modelo no pasa los test de independencia de Ljung-Box. Reintroducimos el coeficiente autorregresivo (el p-valor estaba muy próximo a 0.05) y nos quedamos con el modelo AR(1)-eGARCH(1, 1).
+
+Aunque en el gráfico donde anteriormente se representaron los log-rendimientos frente a los log-rendimientos siguientes no se llegó a observar efecto leverage, el valor positivo del parámetro gamma1 nos confirma su presencia. Es decir, los shocks negativos tienen un impacto mayor en la volatilidad futura en comparación con los shocks positivos de igual magnitud
+
+También apreciamos una de las mejoras con respecto al modelo GARCH estándar en el parámetro alpha, que es negativo. Esto, que no sucedía en modelos anteriores, se debe a que el EGARCH captura el efecto asimétrico en la volatilidad. En cuanto al parámetro omega, el valor negativo indica que la volatilidad tiende a disminuir en ausencia de shocks, lo que puede interpretarse como una tendencia a la estabilidad en la volatilidad cuando no hay eventos significativos que la afecten.
+
+
+```{r, echo=FALSE, fig.height=6, fig.width=7, fig.align='center', message=FALSE}
+par(mfrow=c(2,2), cex=0.7)
+plot(UNICAJA_EGARCH,which=8)
+plot(UNICAJA_EGARCH,which=9)
+plot(UNICAJA_EGARCH,which=10)
+plot(UNICAJA_EGARCH,which=11)
+```
+
+De nuevo, las comprobaciones sobre los residuos estandarizados son muy similares a los modelos anteriores. No parcen seguir una distribución gaussiana y los residuos estandarizados y los estandarizados al cuadrado no son significativos en los primeros retardos.
+
+```{r, echo=FALSE, fig.align='center', fig.width=7, fig.height=4, message=FALSE}
+par(mfrow=c(2,1), cex=0.7)
+plot(residuals(UNICAJA_EGARCH)/sigma(UNICAJA_EGARCH),main="Residuos estandarizados con EGARCH", ylim=c(-7, 7))
+UNICAJA_EGARCH_vol <- sigma(UNICAJA_EGARCH)^2
+
+plot(UNICAJA_EGARCH_vol,type="l",xlab="",ylab="", ylim=c(0, 0.014),
+     main="Volatilidad de los log-rendimientos con EGARCH")
+```
+
+Los residuos estandarizados siguen mostrando un patrón homocedástico, con algunos picos. La volatilidad máxima se da en el mismo punto (inicio de la pandemia) y alcanza un valor muy parecido, con valores de la volatilidad muy inferiores a los estimados por el modelo ARCH.
+
+```{r, echo=FALSE, fig.align='center', fig.width=7, fig.height=6, message=FALSE}
+par(mfrow=c(2,1), cex=0.7, mar=c(3, 4, 2, 2) + 0.1)
+predict_UNICAJA_EGARCH <- ugarchforecast(UNICAJA_EGARCH,n.ahead=5)
+
+plot(predict_UNICAJA_EGARCH,which=1)
+plot(predict_UNICAJA_EGARCH,which=3)
+```
+
+De nuevo, los rendimientos tienden a 0. Sin embargo, la volatilidad sí que muestra un patrón creciente, superando los valores más recientes de la serie.
+
+## Modelo GJR-GARCH
+
+Finalmente, probaremos el modelo GJR-GARCH, una alternativa al eGARCH más simple, que también captura el efecto leverage.
+
+```{r}
+UNICAJA_GJR_spec <- ugarchspec(variance.model=list(model="gjrGARCH",garchOrder=c(1,1)),
+                              mean.model<-list(armaOrder=c(1,0),include.mean=F),
+                              distribution.model="norm")
+UNICAJA_GJR <- ugarchfit(data=UNICAJA_lr,spec=UNICAJA_GJR_spec)
+UNICAJA_GJR
+```
+
+Este modelo tiene todos los parámetros significativos y pasa los test de Ljung-Box, por lo que consideramos que es válido. De nuevo, el parámetro gamma nos indica que existe presencia del efecto leverage.
+
+```{r, echo=FALSE, fig.height=6, fig.width=7, fig.align='center', message=FALSE}
+par(mfrow=c(2,2), cex=0.6)
+plot(UNICAJA_GJR,which=8)
+plot(UNICAJA_GJR,which=9)
+plot(UNICAJA_GJR,which=10)
+plot(UNICAJA_GJR,which=11)
+```
+
+El patrón de los residuos es idéntico al de todos los modelos anteriores: no gaussianos y no presentan autocorrelaciones significativas.
+
+```{r, echo=FALSE, fig.align='center', fig.width=7, fig.height=4, message=FALSE}
+par(mfrow=c(2,1), cex=0.7)
+plot(residuals(UNICAJA_GJR)/sigma(UNICAJA_GJR),main="Residuos estandarizados con GJR-GARCH", ylim=c(-7, 7))
+UNICAJA_GJR_vol <- sigma(UNICAJA_GJR)^2
+
+plot(UNICAJA_GJR_vol,type="l",xlab="",ylab="", ylim = c(0, 0.014),
+     main="Volatilidad de los log-rendimientos con GJR-GARCH")
+```
+
+Los residuos estandarizados parecen seguir siendo homocedásticos. La volatilidad sigue siendo baja en comparación con el modelo ARCH y muestra aproximadamente los mismos picos que los anteriores.
+
+```{r, echo=FALSE, fig.align='center', fig.width=7, fig.height=6, message=FALSE}
+par(mfrow=c(2,1), cex=0.7, mar=c(3, 4, 2, 2) + 0.1)
+predict_UNICAJA_GJR <- ugarchforecast(UNICAJA_GJR,n.ahead=5)
+
+plot(predict_UNICAJA_GJR,which=1)
+plot(predict_UNICAJA_GJR,which=3)
+```
+
+Las predicciones de los log-rendimientos siguen tendiendo a 0, mientras que la volatilidad muestra un patrón creciente similar al del modelo EGARCH.
+
+Podemos comparar los distintos modelos de volatilidad ajustados mediante el AIC, el BIC y la log-verosimilitud:
+```{r, echo = F}
+model_names <- c("ARCH", "GARCH", "iGARCH", 
+                 "EGARCH", "GJR-GARCH")
+
+model_list <- list(UNICAJA_ARCH, UNICAJA_GARCH, UNICAJA_iGARCH, 
+                  UNICAJA_EGARCH, UNICAJA_GJR)
+
+aic_values <- sapply(model_list, function(x) infocriteria(x)["Akaike", ])
+bic_values <- sapply(model_list, function(x) infocriteria(x)["Bayes", ])
+
+loglik_values <- sapply(model_list, function(x) x@fit$LLH)
+
+resultados <- data.frame(
+  Modelo = model_names,
+  LogLik = loglik_values,
+  AIC = aic_values,
+  BIC = bic_values
+)
+
+print(data.frame(
+  Modelo = resultados$Modelo,
+  LogLik = round(resultados$LogLik, 3),
+  AIC = round(resultados$AIC, 3),
+  BIC = round(resultados$BIC, 3)
+), row.names = FALSE)
+```
+
+El modelo EGARCH(1,1) se identifica como el óptimo según los criterios de información AIC (-4.91) y BIC (-4.90), mostrando también el mayor ajuste (LogLik = 5147.68) al capturar eficientemente los efectos asimétricos característicos de los rendimientos financieros. El GJR-GARCH, que también está preparado para esta asimetría, es el segundo mejor en todas las métricas, por lo que concluímos que capturar esta asimetría es clave para un buen ajuste.
+
+También destacamos el GARCH como una alternativa robusta y parsimoniosa, ofreciendo un balance entre complejidad y capacidad explicativa. A pesar de no tratar la asimetría, ofrece unos resultados aceptables.
+
+## Distribuciones alternativas para los residuos
+Como vimos en las salidas de todos los modelos, los residuos estandarizados no eran normales. Vamos a buscar la distribución que se ajuste mejor a las innovaciones estandarizadas de nuestro modelo GARCH.
+
+Comenzamos por la t-Student.Inicialmente se probó con un AR(1)-GARCH(1, 1), pero no pasaba el diagnostico del modelo y el parámtro ar1 no era significativo, por lo que se ajustó un GARCH(1, 1) sin ecuacion para la media.
+
+```{r, echo = F, warning=F, , fig.height=6, fig.width=10, fig.align='center', message=FALSE}
+# Distribución t de Student estándar
+UNICAJA_GARCH_spec_std <- ugarchspec(variance.model=list(model="sGARCH",garchOrder=c(1,1)),
+                                 mean.model<-list(armaOrder=c(0,0),include.mean=F),
+                                 distribution.model="std")
+UNICAJA_GARCH_std <- ugarchfit(data=UNICAJA_lr,spec=UNICAJA_GARCH_spec_std)
+# UNICAJA_GARCH_std
+
+epsilons_UNICAJA_GARCH_std <- residuals(UNICAJA_GARCH_std)/sigma(UNICAJA_GARCH_std)
+d1 <- density(epsilons_UNICAJA_GARCH_std)
+par(mfrow=c(1,2))
+plot(d1$x,d1$y,type='l',lwd=3,col="black",xlab="Log-rendimientos",ylab="Densidad",
+     main="Comparación con t de Student estándar", ylim=c(0, 0.55))
+
+library(fGarch)
+d_t <- dstd(d1$x,mean(epsilons_UNICAJA_GARCH_std),sd(epsilons_UNICAJA_GARCH_std),
+            coef(UNICAJA_GARCH_std)[length(coef(UNICAJA_GARCH_std))])
+lines(d1$x,d_t,type="l",col="deepskyblue2",lwd=3,xlab="",ylab="")
+qqplot(rstd(10000,mean(epsilons_UNICAJA_GARCH_std),sd(epsilons_UNICAJA_GARCH_std),
+       coef(UNICAJA_GARCH_std)[length(coef(UNICAJA_GARCH_std))]),
+       as.numeric(epsilons_UNICAJA_GARCH_std),pch=20,col="deepskyblue2",
+       xlab="Cuantiles de los residuos estandarizados",
+       ylab="Cuantiles de la t de Student estándar",
+       main="Comparación con t de Student estándar")
+abline(0,1,lwd=3) 
+```
+
+Parece ajustarse bastante bien a nuestros residuos estandarizados.
+
+Pasamos ahora a probar la distribución del Error Generalizado Estándar. En el ajuste, estamos en la misma situación que con la distribución anterior, se volvió a ajustar un GARCH(1, 1) sin ecuación para la media.
+```{r, echo = F, warning=F, , fig.height=6, fig.width=10, fig.align='center', message=FALSE}
+# Distribución del error generalizado
+# Ajuste del modelo:
+UNICAJA_GARCH_spec_ged <- ugarchspec(variance.model=list(model="sGARCH",garchOrder=c(1,1)),
+                                mean.model<-list(armaOrder=c(0,0),include.mean=F),
+                                distribution.model="ged")
+UNICAJA_GARCH_ged <- ugarchfit(data=UNICAJA_lr,spec=UNICAJA_GARCH_spec_ged)
+# UNICAJA_GARCH_ged 
+
+epsilons_UNICAJA_GARCH_ged <- residuals(UNICAJA_GARCH_ged)/sigma(UNICAJA_GARCH_ged)
+d1 <- density(epsilons_UNICAJA_GARCH_ged)
+par(mfrow=c(1,2))
+
+plot(d1$x,d1$y,type='l',lwd=3,col="black",xlab="Log-rendimientos",ylab="Densidad",
+     main="Comparación con error generalizado", ylim=c(0, 0.6))
+
+d_ged <- dged(d1$x,mean(epsilons_UNICAJA_GARCH_ged),sd(epsilons_UNICAJA_GARCH_ged),
+              coef(UNICAJA_GARCH_ged)[length(coef(UNICAJA_GARCH_ged))])
+
+lines(d1$x,d_ged,type="l",col="deepskyblue2",lwd=3,xlab="",ylab="")
+
+qqplot(rged(10000,mean(epsilons_UNICAJA_GARCH_ged),sd(epsilons_UNICAJA_GARCH_ged),
+       coef(UNICAJA_GARCH_ged)[length(coef(UNICAJA_GARCH_ged))]),
+       as.numeric(epsilons_UNICAJA_GARCH_ged),pch=20,col="deepskyblue2",
+       xlab="Cuantiles de los residuos estandarizados",
+       ylab="Cuantiles del error generalizado estándar",
+       main="Comparación con error generalizado")
+abline(0,1,lwd=3) 
+```
+
+El ajuste de esta distribución no es tan bueno como el anterior. La distribución GED tiene mayor kurtosis, es decir, tiene un pico mayor que nuestra densidad estimada.
+
+Para la Gaussiana asimétrica, hemos ajustado un AR(1)-GARCH(1, 1), que se considera válido.
+```{r, echo = F, warning=F, , fig.height=6, fig.width=11, fig.align='center', message=FALSE}
+# Distribución Gaussiana asimétrica
+# Ajuste del modelo:
+UNICAJA_GARCH_spec_snorm <- ugarchspec(variance.model=list(model="sGARCH",garchOrder=c(1,1)),
+                                mean.model<-list(armaOrder=c(1,0),include.mean=F),
+                                distribution.model="snorm")
+UNICAJA_GARCH_snorm <- ugarchfit(data=UNICAJA_lr,spec=UNICAJA_GARCH_spec_snorm)
+# UNICAJA_GARCH_snorm
+
+epsilons_UNICAJA_GARCH_snorm <- residuals(UNICAJA_GARCH_snorm)/sigma(UNICAJA_GARCH_snorm)
+d1 <- density(epsilons_UNICAJA_GARCH_snorm)
+par(mfrow=c(1,2))
+
+plot(d1$x,d1$y,type='l',lwd=3,col="black",xlab="Log-rendimientos",ylab="Densidad",
+     main="Comparación con Gaussiana asimétrica estándar")
+d_snorm <- dsnorm(d1$x,mean(epsilons_UNICAJA_GARCH_snorm),sd(epsilons_UNICAJA_GARCH_snorm),
+                  coef(UNICAJA_GARCH_snorm)[length(coef(UNICAJA_GARCH_snorm))])
+lines(d1$x,d_snorm,type="l",col="deepskyblue2",lwd=3,xlab="",ylab="")
+qqplot(rsnorm(10000,mean(epsilons_UNICAJA_GARCH_snorm),sd(epsilons_UNICAJA_GARCH_snorm),
+       coef(UNICAJA_GARCH_snorm)[length(coef(UNICAJA_GARCH_snorm))]),
+       as.numeric(epsilons_UNICAJA_GARCH_snorm),pch=20,col="deepskyblue2",
+       xlab="Cuantiles de los residuos estandarizados",
+       ylab="Cuantiles de la Gaussiana asimétrica",
+       main="Comparación con Gaussiana asimétrica estándar")
+abline(0,1,lwd=3) 
+```
+En este caso, la Gaussiana asimétrica no se ajusta bien por lo contrario a la anterior, tiene menor kurtosis que nuestra densidad ajustada.
+
+Tratamos ahora de ajustar una t-Student asimétrica, con un modelo AR(1)-GARCH(1, 1). Como el parámetro autorregresivo no fue significativo, se eliminó el modelo para la media dejando un GARCH(1, 1).
+```{r, echo = F, warning=F, , fig.height=6, fig.width=10, fig.align='center', message=FALSE}
+# Distribución t de Student asimétrica
+# Ajuste del modelo:
+UNICAJA_GARCH_spec_sstd <- ugarchspec(variance.model=list(model="sGARCH",garchOrder=c(1,1)),
+                                mean.model<-list(armaOrder=c(0,0),include.mean=F),
+                                distribution.model="sstd")
+UNICAJA_GARCH_sstd <- ugarchfit(data=UNICAJA_lr,spec=UNICAJA_GARCH_spec_sstd)
+# UNICAJA_GARCH_sstd
+
+epsilons_UNICAJA_GARCH_sstd <- residuals(UNICAJA_GARCH_sstd)/sigma(UNICAJA_GARCH_sstd)
+d1 <- density(epsilons_UNICAJA_GARCH_sstd)
+par(mfrow=c(1,2))
+plot(d1$x,d1$y,type='l',lwd=3,col="black",xlab="Log-rendimientos",ylab="Densidad",
+     main="Comparación con t de Student asimétrica", ylim=c(0, 0.55))
+d_sstd <- dsstd(d1$x,mean(epsilons_UNICAJA_GARCH_sstd),sd(epsilons_UNICAJA_GARCH_sstd),
+                coef(UNICAJA_GARCH_sstd)[length(coef(UNICAJA_GARCH_sstd))],
+                coef(UNICAJA_GARCH_sstd)[length(coef(UNICAJA_GARCH_sstd))-1])
+lines(d1$x,d_sstd,type="l",col="deepskyblue2",lwd=3,xlab="",ylab="")
+qqplot(rsstd(10000,mean(epsilons_UNICAJA_GARCH_sstd),sd(epsilons_UNICAJA_GARCH_sstd),
+       coef(UNICAJA_GARCH_sstd)[length(coef(UNICAJA_GARCH_sstd))],
+       coef(UNICAJA_GARCH_sstd)[length(coef(UNICAJA_GARCH_sstd))-1]),
+       as.numeric(epsilons_UNICAJA_GARCH_sstd),pch=20,col="deepskyblue2",
+       xlab="Cuantiles de los residuos estandarizados",
+       ylab="Cuantiles de la t de Student asimétrica",
+       main="Comparación con t de Student asimétrica")
+abline(0,1,lwd=3) 
+```
+
+Esta distribución también parece ajustar de manera razonable nuestros datos. A simple vista, no podemos decir si ajusta mejor o peor que la t-Student estándar.
+
+Para ajustar la distribución del Error Generalizado Asimétrico, también hemos tenido que eliminar el parámetro autorregresivo. Por tanto, el modelo en este caso vuelve a ser un GARCH(1, 1).
+```{r, echo = F, warning=F, , fig.height=6, fig.width=10, fig.align='center', message=FALSE}
+# Distribución del error generalizado asimétrica
+UNICAJA_GARCH_spec_sged <- ugarchspec(variance.model=list(model="sGARCH",garchOrder=c(1,1)),
+                                mean.model<-list(armaOrder=c(0,0),include.mean=F),
+                                distribution.model="sged")
+UNICAJA_GARCH_sged <- ugarchfit(data=UNICAJA_lr,spec=UNICAJA_GARCH_spec_sged)
+# UNICAJA_GARCH_sged
+
+epsilons_UNICAJA_GARCH_sged <- residuals(UNICAJA_GARCH_sged)/sigma(UNICAJA_GARCH_sged)
+d1 <- density(epsilons_UNICAJA_GARCH_sged)
+par(mfrow=c(1,2))
+plot(d1$x,d1$y,type='l',lwd=3,col="black",xlab="Log-rendimientos",ylab="Densidad",
+     main="Comparación con error generalizado asimétrica", ylim=c(0, 0.6))
+d_sged <- dsged(d1$x,mean(epsilons_UNICAJA_GARCH_sged),sd(epsilons_UNICAJA_GARCH_sged),
+                coef(UNICAJA_GARCH_sged)[length(coef(UNICAJA_GARCH_sged))],
+                coef(UNICAJA_GARCH_sged)[length(coef(UNICAJA_GARCH_sged))-1])
+lines(d1$x,d_sged,type="l",col="deepskyblue2",lwd=3,xlab="",ylab="")
+qqplot(rsged(10000,mean(epsilons_UNICAJA_GARCH_sged),sd(epsilons_UNICAJA_GARCH_sged),
+       coef(UNICAJA_GARCH_sged)[length(coef(UNICAJA_GARCH_sged))],
+       coef(UNICAJA_GARCH_sged)[length(coef(UNICAJA_GARCH_sged))-1]),
+       as.numeric(epsilons_UNICAJA_GARCH_sged),pch=20,col="deepskyblue2",
+       xlab="Cuantiles de los residuos estandarizados",
+       ylab="Cuantiles de la error generalizado asimétrica estándar",
+       main="Comparación con error generalizado asimétrica")
+abline(0,1,lwd=3) 
+```
+
+Como vemos, el Error Generalizado Asimétrico tampoco ajusta bien a nuestros datos, tiene demasiada kurtosis.
+
+Podemos calcular el BIC del ajuste para aclarar qué distribución funciona mejor:
+```{r, echo = F}
+model_names <- c("gaussiana", "t-student", "error gen. estándar", "norm. asim.", 
+                 "t-student asim.", "error gen. asim.")
+
+model_list <- list(UNICAJA_GARCH, UNICAJA_GARCH_std, UNICAJA_GARCH_ged, UNICAJA_GARCH_snorm, 
+                  UNICAJA_GARCH_sstd, UNICAJA_GARCH_sged)
+
+bic_values <- sapply(model_list, function(x) infocriteria(x)["Bayes", ])
+
+
+resultados <- data.frame(
+  Modelo = model_names,
+  BIC = bic_values,
+  Diferencia_BIC = bic_values - min(bic_values)
+)
+
+print(data.frame(
+  Modelo = resultados$Modelo,
+  BIC = round(resultados$BIC, 3)
+), row.names = FALSE)
+```
+
+Como ya esperábamos, el BIC nos indica que las distribuciones basadas en la t-Student (simétrica y asimétrica) son las que mejor se ajustan a los residuos estandarizados de nuestro modelo GARCH. La t-Student estándar es la que mejor se ajusta de las dos, por un margen pequeño.
+
+## Cálculo del VaR
+Pasamos ahora a calcular el VaR a un día para los distintos modelos de distribución ajustados al modelo GARCH. El VaR es la estimación de la pérdida potencial de un rendimiento financiero, siempre con cierta incertidumbre. Aquí mostramos los resultados para nuestro modelo GARCH.
+```{r, echo = F}
+# Gaussian (normal)
+pred_UNICAJA_GARCH_normal <- ugarchforecast(UNICAJA_GARCH, n.ahead=1)
+med_pred_T1_normal <- fitted(pred_UNICAJA_GARCH_normal)
+var_pred_T1_normal <- sigma(pred_UNICAJA_GARCH_normal)^2
+
+VaR_Gaussian_05 <- med_pred_T1_normal + qnorm(0.05) * sqrt(var_pred_T1_normal)
+VaR_Gaussian_01 <- med_pred_T1_normal + qnorm(0.01) * sqrt(var_pred_T1_normal)
+VaR_Gaussian_001 <- med_pred_T1_normal + qnorm(0.001) * sqrt(var_pred_T1_normal)
+
+# Student-t
+pred_UNICAJA_GARCH_std <- ugarchforecast(UNICAJA_GARCH_std, n.ahead=1)
+med_pred_T1_std <- fitted(pred_UNICAJA_GARCH_std)
+var_pred_T1_std <- sigma(pred_UNICAJA_GARCH_std)^2
+
+# IMPORTANTE: Para distribución t-Student, usar qt() en lugar de qnorm()
+VaR_Student_05 <- med_pred_T1_std + qt(0.05, df = coef(UNICAJA_GARCH_std)["shape"]) * sqrt(var_pred_T1_std)
+VaR_Student_01 <- med_pred_T1_std + qt(0.01, df = coef(UNICAJA_GARCH_std)["shape"]) * sqrt(var_pred_T1_std)
+VaR_Student_001 <- med_pred_T1_std + qt(0.001, df = coef(UNICAJA_GARCH_std)["shape"]) * sqrt(var_pred_T1_std)
+
+# GED
+pred_UNICAJA_GARCH_ged <- ugarchforecast(UNICAJA_GARCH_ged, n.ahead=1)
+med_pred_T1_ged <- fitted(pred_UNICAJA_GARCH_ged)
+var_pred_T1_ged <- sigma(pred_UNICAJA_GARCH_ged)^2
+
+
+shape_ged <- coef(UNICAJA_GARCH_ged)["shape"]
+VaR_GED_05 <- med_pred_T1_ged + qged(0.05, nu = shape_ged) * sqrt(var_pred_T1_ged)
+VaR_GED_01 <- med_pred_T1_ged + qged(0.01, nu = shape_ged) * sqrt(var_pred_T1_ged)
+VaR_GED_001 <- med_pred_T1_ged + qged(0.001, nu = shape_ged) * sqrt(var_pred_T1_ged)
+
+# Skew Gaussian
+pred_UNICAJA_GARCH_snorm <- ugarchforecast(UNICAJA_GARCH_snorm, n.ahead=1)
+med_pred_T1_snorm <- fitted(pred_UNICAJA_GARCH_snorm)
+var_pred_T1_snorm <- sigma(pred_UNICAJA_GARCH_snorm)^2
+
+skew_snorm <- coef(UNICAJA_GARCH_snorm)["skew"]
+VaR_skew_Gaussian_05 <- med_pred_T1_snorm + qsnorm(0.05, xi = skew_snorm) * sqrt(var_pred_T1_snorm)
+VaR_skew_Gaussian_01 <- med_pred_T1_snorm + qsnorm(0.01, xi = skew_snorm) * sqrt(var_pred_T1_snorm)
+VaR_skew_Gaussian_001 <- med_pred_T1_snorm + qsnorm(0.001, xi = skew_snorm) * sqrt(var_pred_T1_snorm)
+
+# Skew Student-t
+pred_UNICAJA_GARCH_sstd <- ugarchforecast(UNICAJA_GARCH_sstd, n.ahead=1)
+med_pred_T1_sstd <- fitted(pred_UNICAJA_GARCH_sstd)
+var_pred_T1_sstd <- sigma(pred_UNICAJA_GARCH_sstd)^2
+
+shape_sstd <- coef(UNICAJA_GARCH_sstd)["shape"]
+skew_sstd <- coef(UNICAJA_GARCH_sstd)["skew"]
+VaR_skew_Student_05 <- med_pred_T1_sstd + qsstd(0.05, nu = shape_sstd, xi = skew_sstd) * sqrt(var_pred_T1_sstd)
+VaR_skew_Student_01 <- med_pred_T1_sstd + qsstd(0.01, nu = shape_sstd, xi = skew_sstd) * sqrt(var_pred_T1_sstd)
+VaR_skew_Student_001 <- med_pred_T1_sstd + qsstd(0.001, nu = shape_sstd, xi = skew_sstd) * sqrt(var_pred_T1_sstd)
+
+# Skew GED
+pred_UNICAJA_GARCH_sged <- ugarchforecast(UNICAJA_GARCH_sged, n.ahead=1)
+med_pred_T1_sged <- fitted(pred_UNICAJA_GARCH_sged)
+var_pred_T1_sged <- sigma(pred_UNICAJA_GARCH_sged)^2
+
+shape_sged <- coef(UNICAJA_GARCH_sged)["shape"]
+skew_sged <- coef(UNICAJA_GARCH_sged)["skew"]
+VaR_skew_GED_05 <- med_pred_T1_sged + qsged(0.05, nu = shape_sged, xi = skew_sged) * sqrt(var_pred_T1_sged)
+VaR_skew_GED_01 <- med_pred_T1_sged + qsged(0.01, nu = shape_sged, xi = skew_sged) * sqrt(var_pred_T1_sged)
+VaR_skew_GED_001 <- med_pred_T1_sged + qsged(0.001, nu = shape_sged, xi = skew_sged) * sqrt(var_pred_T1_sged)
+
+tabla_VaR <- data.frame(
+  row.names = c("Gaussian", "Student-t", "GED", 
+                "Skew Gaussian", "Skew Student-t", "Skew GED"),
+  "VaR_95" = c(VaR_Gaussian_05, VaR_Student_05, VaR_GED_05,
+               VaR_skew_Gaussian_05, VaR_skew_Student_05, VaR_skew_GED_05),
+  "VaR_99" = c(VaR_Gaussian_01, VaR_Student_01, VaR_GED_01,
+               VaR_skew_Gaussian_01, VaR_skew_Student_01, VaR_skew_GED_01),
+  "VaR_99.9" = c(VaR_Gaussian_001, VaR_Student_001, VaR_GED_001,
+                 VaR_skew_Gaussian_001, VaR_skew_Student_001, VaR_skew_GED_001)
+)
+
+colnames(tabla_VaR) <- c("95%", "99%", "99.9%")
+
+# Mostrar la tabla
+print(tabla_VaR)
+```
+
+Viendo los resultados de la tabla de VaR y considerando que la distribución t-Student estandar demostró ser la que mejor se ajustaba a los datos, se confirma su capacidad para capturar colas pesadas típicas de los rendimientos financieros. Los valores menos conservadores en todos los niveles de confianza revelan que la distribución normal utilizada inicalmente subestima el riesgo real. Concluimos que la elección de la distribución en modelos GARCH afecta sustancialmente a la estimación del riesgo.
+
+Esto se puede ver más claramente al comparar las pérdidas potenciales para un valor de 10 millones de euros en acciones:
+```{r, echo = F}
+tabla_VaR * 10^7
+```
+
+La estimación de la pérdida potencial utilizando la distribución t-Student es mucho mayor que la estimada por la distribución normal, especialmente en niveles de confianza más altos donde es prácticamente el doble. Esto vuelve a subrayar la importancia de elegir una distribución adecuada para la gestión del riesgo financiero. Además, el VaR ya tiende a subestimar la pérdida real cuando sucede un evento extremo, por lo que el cálculo con el resto de distribuciones es muy sesgado.
+
+Una medida alternativa del riesgo es el Expected Shortfall, que promedia los rendimientos de la serie menores que el VaR. Calculamos el ES para todos los modelos y niveles de confianza:
+
+```{r, echo = F}
+# 1. Skew Gaussian
+ES_skew_Gaussian_05 <- mean(UNICAJA_lr[UNICAJA_lr < as.numeric(VaR_skew_Gaussian_05)])
+ES_skew_Gaussian_01 <- mean(UNICAJA_lr[UNICAJA_lr < as.numeric(VaR_skew_Gaussian_01)])
+ES_skew_Gaussian_001 <- mean(UNICAJA_lr[UNICAJA_lr < as.numeric(VaR_skew_Gaussian_001)])
+
+# 2. Skew Student-t
+ES_skew_Student_05 <- mean(UNICAJA_lr[UNICAJA_lr < as.numeric(VaR_skew_Student_05)])
+ES_skew_Student_01 <- mean(UNICAJA_lr[UNICAJA_lr < as.numeric(VaR_skew_Student_01)])
+ES_skew_Student_001 <- mean(UNICAJA_lr[UNICAJA_lr < as.numeric(VaR_skew_Student_001)])
+
+# 3. Skew GED
+ES_skew_GED_05 <- mean(UNICAJA_lr[UNICAJA_lr < as.numeric(VaR_skew_GED_05)])
+ES_skew_GED_01 <- mean(UNICAJA_lr[UNICAJA_lr < as.numeric(VaR_skew_GED_01)])
+ES_skew_GED_001 <- mean(UNICAJA_lr[UNICAJA_lr < as.numeric(VaR_skew_GED_001)])
+
+# 4. Gaussian
+ES_Gaussian_05 <- mean(UNICAJA_lr[UNICAJA_lr < as.numeric(VaR_Gaussian_05)])
+ES_Gaussian_01 <- mean(UNICAJA_lr[UNICAJA_lr < as.numeric(VaR_Gaussian_01)])
+ES_Gaussian_001 <- mean(UNICAJA_lr[UNICAJA_lr < as.numeric(VaR_Gaussian_001)])
+
+# 5. Student-t
+ES_Student_05 <- mean(UNICAJA_lr[UNICAJA_lr < as.numeric(VaR_Student_05)])
+ES_Student_01 <- mean(UNICAJA_lr[UNICAJA_lr < as.numeric(VaR_Student_01)])
+ES_Student_001 <- mean(UNICAJA_lr[UNICAJA_lr < as.numeric(VaR_Student_001)])
+
+# 6. GED
+ES_GED_05 <- mean(UNICAJA_lr[UNICAJA_lr < as.numeric(VaR_GED_05)])
+ES_GED_01 <- mean(UNICAJA_lr[UNICAJA_lr < as.numeric(VaR_GED_01)])
+ES_GED_001 <- mean(UNICAJA_lr[UNICAJA_lr < as.numeric(VaR_GED_001)])
+
+# Crear tabla con el orden solicitado
+tabla_ES <- data.frame(
+  row.names = c("Gaussian", "Student-t", "GED",
+                "Skew Gaussian", "Skew Student-t", "Skew GED"),
+  "ES_95" = c(ES_Gaussian_05, ES_Student_05, ES_GED_05,
+              ES_skew_Gaussian_05, ES_skew_Student_05, ES_skew_GED_05),
+  "ES_99" = c(ES_Gaussian_01, ES_Student_01, ES_GED_01,
+              ES_skew_Gaussian_01, ES_skew_Student_01, ES_skew_GED_01),
+  "ES_99.9" = c(ES_Gaussian_001, ES_Student_001, ES_GED_001,
+                ES_skew_Gaussian_001, ES_skew_Student_001, ES_skew_GED_001)
+)
+
+# Renombrar columnas para mejor presentación
+colnames(tabla_ES) <- c("95%", "99%", "99.9%")
+
+print(tabla_ES)
+```
+
+Basándonos en los resultados del Expected Shortfall, observamos que la distribución t-Student asimétrica vuelve a proporcionar los valores más conservadores en todos los niveles de confianza. Esto refuerza la conclusión anterior sobre la importancia de seleccionar una distribución adecuada para la gestión del riesgo financiero, y refleja el mal ajuste de la distribución normal que se usó inicialmente. 
+De nuevo, las diferencias se observan mejor si mostramos los resultados esperados para un valor de 10 millones de euros en acciones:
+
+```{r}
+tabla_ES * 10^7
+```
+
+En conclusión, las distribuciones basadas en la t-Student son las que proporcionan unos valores más conservadores (mayor pérdida), indicando que el resto subestiman claramente el riesgo. Los modelos que se calcularon anteriormente con la distribución Gaussiana no devuelven estimaciones realistas de las posibles pérdidas causadas por el activo.
+
+## Análisis conjunto de Unicaja, Sabadell y Caixabank
+
+Vamos a analizar ahora en conjunto las series de precios de cierre de Unicaja, Sabadell y Caixabank. Estas tres empresas pertenecen al sector financiero en España y es interesante estudiar su comportamiento conjunto. Imputamos los valores faltantes de los log-rendimientos por la media y mostramos las series en la misma ventana temporal.
+```{r, echo = F, warning = F, fig.align='center'}
+getSymbols(c("UNI.MC", "SAB.MC","CABK.MC"),from="2010-01-01",to="2025-09-07")
+
+# Extraemos los precios de cierre de las tres empresas:
+UNICAJA_prices <- UNI.MC$UNI.MC.Adjusted
+SABADELL_prices <- SAB.MC$SAB.MC.Adjusted
+CAIXABANK_prices <- CABK.MC$CABK.MC.Adjusted
+
+# Definimos los log-rendimientos de las tres empresas eliminando el primer dato de cada uno de ellos:
+UNICAJA_lr <- Delt(UNICAJA_prices,type="log")[-1]
+SABADELL_lr <- Delt(SABADELL_prices,type="log")[-1]
+CAIXABANK_lr <- Delt(CAIXABANK_prices,type="log")[-1]
+
+# imputamos los datos faltantes por la media:
+mean_UNICAJA_lr <- mean(UNICAJA_lr,na.rm=T)
+UNICAJA_lr[which(is.na(UNICAJA_lr))] <- mean_UNICAJA_lr
+
+mean_SABADELL_lr <- mean(SABADELL_lr,na.rm=T)
+SABADELL_lr[which(is.na(SABADELL_lr))] <- mean_SABADELL_lr
+
+mean_CAIXABANK_lr <- mean(CAIXABANK_lr,na.rm=T)
+CAIXABANK_lr[which(is.na(CAIXABANK_lr))] <- mean_CAIXABANK_lr
+
+
+# Fecha inicial (primer dato de Unicaja)
+start_date <- as.Date("2017-07-01")
+
+# Recortamos todas las series al mismo rango temporal
+UNICAJA_lr   <- window(UNICAJA_lr,   start = start_date)
+SABADELL_lr  <- window(SABADELL_lr,  start = start_date)
+CAIXABANK_lr <- window(CAIXABANK_lr, start = start_date)
+
+
+# Hacemos un gráfico de los precios de cierre de las tres empresas:
+par(mfrow=c(3,1))
+plot(UNICAJA_prices,type="l",main="Nivel diario del precio de UNICAJA",xlab="Fecha",ylab="Precio ajustado", ylim=c(0, 9))
+plot(SABADELL_prices,type="l",main="Nivel diario del precio de SABADELL",xlab="Fecha",ylab="Precio ajustado", ylim=c(0, 9))
+plot(CAIXABANK_prices,type="l",main="Nivel diario del precio de CAIXABANK",xlab="Fecha",ylab="Precio ajustado", ylim=c(0, 9))
+```
+Vemos que las tres series muestran una tendencia parecida, con un patrón creciente en los últimos meses. Sin embargo, la entidad Caixabank alcanza unos valores muy superiores a las otras dos. Mostramos los log-rendimientos:
+
+```{r, echo = F, fig.align='center', fig.height=8, fig.width=10}
+par(mfrow=c(3,1))
+plot(UNICAJA_lr,type="l",main="Log-rendimientos de UNICAJA",xlab="Fecha",ylab="Log-rendimientos", ylim=c(-0.25,0.25))
+plot(SABADELL_lr,type="l",main="Log-rendimientos de SABADELL",xlab="Fecha",ylab="Log-rendimientos", ylim=c(-0.25,0.25))
+plot(CAIXABANK_lr,type="l",main="Log-rendimientos de CAIXABANK",xlab="Fecha",ylab="Log-rendimientos", ylim=c(-0.25,0.25))
+```
+
+Caixabank tiene los valores de los precios más altos y la menor varianza en los log-rendimientos de las tres. Ninguna de las series parece homocedastica y todas muestran zonas de volatilidad en los mismos periodos, destacando para todas el año 2020 (coincidiendo con la pandemia de COVID-19).
+
+```{r, echo = F}
+# Relación entre rendimientos incondicional
+Yt <- cbind(UNICAJA_lr,SABADELL_lr,CAIXABANK_lr)
+n <- nrow(Yt)
+m <- ncol(Yt)
+
+cor(Yt)
+```
+
+La correlación entre los log-rendimientos de las tres empresas es bastante alta, especialmente entre SABADELL y CAIXABANK. Esto sugiere que los movimientos en los precios de estas acciones tienden a ser similares. Este resultado es razonable dado que operan en el mismo sector, el financiero. Comprobamos las autocorrelaciones de las series:
+
+```{r, echo = F, fig.align='center', fig.height=4, fig.width=12}
+# Modelo VAR para la media
+par(mfrow=c(1,3), cex = 1.1)
+acf(Yt[,1],main="Log-rendimientos de UNICAJA")
+acf(Yt[,2],main="Log-rendimientos de SABADELL")
+acf(Yt[,3],main="Log-rendimientos de CAIXABANK")
+```
+
+Aunque sí hay autocorrelación significativa en el segundo retardo de alguna de las series, consideramos que un modelo VAR(0) parece lo más adecuado. Esto es equivalente a estimar el parámetro Phi_0 con el vector de medias muestral:
+
+```{r, echo = F}
+mu <- colMeans(Yt)
+mu
+```
+
+Como vemos, todos los valores son muy cercanos a 0, por lo que podemos decir que las tres series están centradas con respecto al 0.
+
+Al escoger p=0, no existe parte autoregresiva en el modelo VAR, por lo que los rendimientos ajustados son simplemente los rendimientos originales menos la media estimada. Mostramos los primeros residuos:
+
+```{r, warning=FALSE, echo = F}
+residuals_Yt<- Yt - matrix(mu,nrow=n,ncol=m,byrow=T)
+head(residuals_Yt)
+```
+
+Otro de los modeos más utilizados para modelar la volatilidad conjunta de varias series financieras es el modelo BEKK. Procedemos a estimar un modelo BEKK(1,1) para los rendimientos ajustados obtenidos anteriormente y obtener los estadísticos t para los parámetros estimados en las tres matrices del modelo BEKK(1,1), que nos dicen qué parámetros son signiificativos (valor absoluto mayor que 2):
+
+```{r, warning=F, message=F}
+library(mgarchBEKK)
+
+at_Yt <- as.matrix(residuals_Yt)
+
+BEKK_Yt <- BEKK(at_Yt,order=c(1,1))
+
+A <- BEKK_Yt$est.params[[1]]
+A1 <- BEKK_Yt$est.params[[2]]
+B1 <- BEKK_Yt$est.params[[3]]
+
+# errores estándar de los parámetros estimados en las tres matrices
+
+se_A <- BEKK_Yt$asy.se.coef[[1]]
+se_A1 <- BEKK_Yt$asy.se.coef[[2]]
+se_B1 <- BEKK_Yt$asy.se.coef[[3]]
+
+# obtener los estadísticos t, que nos dicen que parámetros son significativos
+t_A <- A/se_A
+t_A
+
+t_A1 <- A1/se_A1
+t_A1
+
+t_B1 <- B1/se_B1
+t_B1
+```
+
+Vemos muchos parámetros no significativos, incluso algunos valores NA en la parte inferior de la primera matriz de estadísticos t debido a indeterminaciones.
+
+## Correlaciones dinámicas
+Al estar trabajando con series de varias empresas a la vez, podemos estudiar su correlación dinámica a través de un modelo DCC.
+
+```{r, echo = F, warning=F, message=F}
+library(MTS)
+# Estimación de un modelo DCC
+
+dcc_vol_Yt <- dccPre(at_Yt,include.mean=F,p=0,cond.dist="std")
+
+dcc_vol_Yt_est <- dcc_vol_Yt$est
+dcc_vol_Yt_se_est <- dcc_vol_Yt$se.coef
+dcc_vol_Yt_vol <- dcc_vol_Yt$marVol^2
+```
+
+A partir del modelo DCC, podemos obtener las volatilidades dinámicas estimadas para cada una de las tres series de rendimientos:
+
+```{r, echo = F, fig.align='center', fig.height=8, fig.width=10}
+# gráficos de las volatilidades estimadas
+par(mfrow=c(3,1), cex=1.1)
+plot(dcc_vol_Yt_vol[,1],type="l",
+     xlab="Time",ylab="Volatilidad",main="Volatilidad de UNICAJA", ylim=c(0,0.007))
+plot(dcc_vol_Yt_vol[,2],type="l",
+     xlab="Time",ylab="Volatilidad",main="Volatilidad de SABADELL", ylim=c(0,0.007))
+plot(dcc_vol_Yt_vol[,3],type="l",
+     xlab="Time",ylab="Volatilidad",main="Volatilidad de CAIXABANK", ylim=c(0,0.007))
+```
+
+Se aprecia que Sabadell es la de mayor volatilidad, mientras que Unicaja y Caixabank tienen valores similares entre sí. Aún así, los picos de mayor volatilidad se dan en los mismos espacios (COVID-19, guerra de Ucrania).
+
+También podemos mostrar las gráficas de correlaciones parciales entre las tres entidades:
+
+```{r, echo = F, fig.align='center', fig.height=10}
+# Para estimar las correlaciones dinámicas, necesitamos obtener la serie de residuos
+# estandarizados, que también proporciona la función dccPre
+
+dcc_vol_Yt_stres <- dcc_vol_Yt$sresi
+
+# estimar las correlaciones dinámicas
+dcc_cor_Yt <- dccFit(dcc_vol_Yt_stres,type="TseTsui")
+
+dcc_cor_Yt_est <- dcc_cor_Yt$estimates
+
+dcc_cor_matrices <- lapply(1:n,matrix,data=NA,nrow=m,ncol=m)
+for (i in 1 : n){dcc_cor_matrices[[i]] <- matrix(dcc_cor_Yt$rho.t[i,],nrow=m,ncol=3)}
+
+
+# gráfico de las correlaciones dinámicas existentes entre los tres rendimientos
+par(mfrow=c(3,1))
+plot(dcc_cor_Yt$rho.t[,2],type="l", ylim = c(0.4, 0.8),
+     xlab="Time",ylab="Correlación",
+     main="Correlaciones dinámicas para UNICAJA vs SABADELL")
+
+
+plot(dcc_cor_Yt$rho.t[,3],type="l", ylim = c(0.4, 0.8),
+     xlab="Time",ylab="Correlación",
+     main="Correlaciones dinámicas para UNICAJA vs CAIXABANK")
+
+plot(dcc_cor_Yt$rho.t[,6],type="l", ylim = c(0.4, 0.8),
+     xlab="Time",ylab="Correlación",
+     main="Correlaciones dinámicas para SABADELL vs CAIXABANK")
+```
+
+La alta variabilidad de las correlaciones durante el tiempo, con valores que van desde 0.45 hasta 0.7 aproximadamente, confirma la importancia de que estas sean dinámicas. Como ya vimos en las correlaciones al inicio, las dos entidades con una correlación mayor durante toda la serie son Sabadell y Caixabank, aunque en general es superior a 0.5 para todas las entidades en prácticamente todo el dominio.
+
+## Carteras óptimas
+
+Teniendo las tres series de rendimientos, nos puede interesar calcular la cartera óptima de las tres acciones en dos sentidos: minimizando la varianza de la cartera y optimizando la media-varianza. Comenzamos por la cartera de mínima varianza:
+
+```{r, echo=FALSE}
+# Cartera óptima en el sentido varianza
+
+Vol_T1 <- as.vector(dcc_vol_Yt_est[,1] + dcc_vol_Yt_est[,2] * at_Yt[n,]^2 + 
+                      dcc_vol_Yt_est[,3] * dcc_vol_Yt_vol[n,])
+D_T1 <- diag(sqrt(Vol_T1))
+R_T1 <- (1 - dcc_cor_Yt_est[1] - dcc_cor_Yt_est[2]) * cor(dcc_vol_Yt_stres) + 
+  dcc_cor_Yt_est[1] * dcc_cor_matrices[[n]] + dcc_cor_Yt_est[2] * cor(at_Yt[n:(n-3),])
+
+H_T1 <- D_T1 %*% R_T1 %*% D_T1
+
+i_H_T1 <- solve(H_T1)
+
+Un <- matrix(rep(1,m),ncol=1)
+# El cálculo de la cartera óptima es el siguiente:
+  
+c <- i_H_T1 %*% Un / as.numeric(t(Un) %*% i_H_T1 %*% Un)
+c
+```
+
+Según la cartera ótptima en el sentido de mínima varianza, deberíamos invertir aproximadamente un 30.19% en UNICAJA, un 27.95% en SABADELL y un 41.86% en CAIXABANK.
+
+```{r, echo=F}
+# Para obtener la media y varianza de la cartera óptima necesitamos obtener la predicción de la media en tiempo T+1
+# . Para ello utilizamos la estimación del modelo VAR(1)
+# anterior. Como se puede comprobar, en este caso, la media de la cartera esperada no es muy diferente de 0
+# :
+
+Phi_0 <- matrix(mu,nrow=m,ncol=1)
+Phi_1 <- matrix(0,nrow=m,ncol=m)
+mu_T1 <- Phi_0 + Phi_1 %*% t(Yt[n,])
+mu_T1
+```
+
+La media de la cartera esperada es muy cercana a 0, lo cual es lógico dado que las medias de las tres series son muy cercanas a 0. Para esta cartera óptima en sentido de la varianza, podemos mostrar tanto su rendimiento esperado como su varianza
+
+```{r, echo=F}
+cat("Rendimiento esperado:", t(c) %*% mu_T1)
+cat("\nVarianza esperada:", t(c) %*% H_T1 %*% c)
+```
+Pasamos a calcular la cartera óptima en el sentido media-varianza
+
+```{r, echo=F}
+# Cartera óptima en sentido media-varianza
+
+a1 <- as.numeric(t(Un) %*% i_H_T1 %*% mu_T1)
+
+a2 <- as.numeric(t(mu_T1) %*% i_H_T1 %*% mu_T1)
+
+a3 <- as.numeric(t(Un) %*% i_H_T1 %*% Un)
+
+a4 <- a2 * a3 - a1^2
+
+# Vamos a considerar valores del rendimiento esperado positivos en tiempo T+1
+# entre 0
+# y .01
+# (es decir, entre un 0%
+#   y un 1%
+# ) en pasos de tamaño 0.0001
+# dando lugar a 101
+# posibles valores:
+  
+m_T1 <- seq(0,.01,by=0.0001)
+
+lm_T1 <- length(m_T1)
+
+c_T1 <- matrix(0,nrow=m,ncol=lm_T1)
+v_T1 <- matrix(0,nrow=lm_T1,ncol=1)
+
+for (i in 1 : lm_T1){
+  c_T1[,i] <- (a2 * i_H_T1 %*% Un - a1 * i_H_T1 %*% mu_T1 + 
+                 m_T1[i] * (a3 * i_H_T1 %*% mu_T1 - a1 * i_H_T1 %*% Un)) / a4
+  v_T1[i] <- t(c_T1[,i]) %*% H_T1 %*% c_T1[,i]
+}
+
+
+# Por último, vemos la frontera eficiente que nos ayudará a decidir que cartera 
+# seleccionamos de entre todas las obtenidas. La linea recta horizontal corresponde
+# a la cartera con mínima varianza que obtuvimos en el apartado anterior:
+  
+par(mfrow=c(1,1))
+plot(v_T1,m_T1,type="b",pch=19,col="steelblue2",
+     xlab="Volatilidad",ylab="Rendimiento esperado",
+     main="Frontera eficiente")
+abline(h=t(c) %*% mu_T1)
+```
+
+Podemos seleccionar la cartera que ofrece un beneficio esperado de 0.60%, obteniendo unos pesos que nos indican como distribuir nuestro dinero:
+
+```{r, echo=F}
+c_T1[, 60]
+```
+El tercer activo es el único positivo, con un valor muy elevado, lo que indica que Caixbank es claramente la entidad con mejor rentabilidad-riesgo. Para los demás activos, con pesos muy negativos (especialmente Sabadell), lo recomendable sería la venta en corto.
+Es más, un peso tan grande (superior a 1) para Sabadell indica que deberíamos invertir más del 100% de nuestro capital ahí, con el dinero obtenido de la venta de los demás activos.
+
