@@ -1,0 +1,764 @@
+---
+title: 'Práctica 1: Clasificación'
+author: 'Grupo XX'
+date: "Curso 2025/2026"
+output:
+  pdf_document: default
+  html_document: default
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+Esta práctica debe entregarse antes del viernes 28 de noviembre de 2025
+en formato pdf, incluyendo el código R utilizado, las correspondientes
+salidas y los comentarios (o interpretaciones de los resultados)
+pertinentes (para ello se recomienda emplear RMarkdown, a partir de un
+fichero *.Rmd* o un fichero *.R* mediante spin).
+
+```{=html}
+<!--
+knitr::purl("Practica_1.Rmd", documentation = 2)
+knitr::spin("Practica_1R",knit = FALSE)
+-->
+```
+
+En esta práctica se empleará una modificación del conjunto de datos
+`spotify`, que contiene una lista exhaustiva de las canciones más
+famosas reproducidas en 2023 que aparecen en Spotify. Lista completa de
+características:
+
+| Variable | Descripción |
+|------------------------------------|------------------------------------|
+| track_name | Nombre de la canción |
+| artist(s)\_name | Nombre del artista o artistas de la canción |
+| artist_count | Número de artistas que participan en la canción |
+| streams | Número total de reproducciones en Spotify |
+| released_year | Año en que se lanzó la canción |
+| released_month | Mes en que se lanzó la canción |
+| released_day | Día del mes en que se lanzó la canción |
+| in_spotify_charts | Posición de la canción en las listas de Spotify |
+| in_apple_charts | Posición de la canción en las listas de Apple Music |
+| in_deezer_charts | Posición de la canción en las listas de Deezer |
+| bpm | Pulsaciones por minuto, medida del tempo de la canción |
+| key | Tono o tonalidad de la canción |
+| mode | Modo de la canción (mayor o menor) |
+| danceability\_ | Porcentaje que indica cuán adecuada es la canción para bailar |
+| valence\_ | Nivel de positividad del contenido musical de la canción |
+| energy\_ | Nivel percibido de energía de la canción |
+| acousticness\_ | Cantidad de sonido acústico presente en la canción |
+| instrumentalness\_ | Cantidad de contenido instrumental en la canción |
+| liveness\_ | Presencia de elementos de interpretación en vivo |
+| speechiness\_ | Cantidad de palabras habladas presentes en la canción |
+| hit | Factor que indica si la canción ha sido un éxito (`"Yes"`) o no (`"No"`) |
+
+Se considerará como respuesta la variable `hit`, factor que indica si
+una canción es un *éxito*, `hit=Yes` o no `hit=No`. Como predictores se
+pueden utilizar el resto de variables del conjunto de datos. Más
+información relacionada con el conjunto de datos, visitar
+<https://www.kaggle.com/datasets/nelgiriyewithana/top-spotify-songs-2023>.
+
+Cada grupo de práctica dispone de una modificación del conjunto de datos
+personalizada, que contieneuna lista reducida con de variables y
+observaciones, en el fichero `spotify2023_XX.RData` donde `XX` indica el
+número del grupo. Se debe establecer la semilla igual al número de grupo
+multiplicado por 10 mediante la función `set.seed()`:
+
+```{r}
+grupo <- 5
+load(paste0("spotify2023_", grupo, ".RData")) 
+semilla <- as.numeric(grupo) * 10
+set.seed(semilla)
+```
+
+También se recomienda establecer la semilla antes de ajustar cada
+modelo. Se considerarán el 80% de las observaciones como muestra de
+aprendizaje y el 20% restante como muestra de test.
+
+# Ejercicio 1 {.unnumbered}
+
+Obtener un árbol de decisión que permita clasificar si una canción
+(observación) se considera un éxito (`hit=Yes`) o no (`hit=No`).
+
+a.  Seleccionar el parámetro de complejidad de forma automática
+    siguiendo el criterio de un error estándar de Breiman et al. (1984).
+
+b.  Representar, interpretar el árbol resultante y comentar la
+    importancia de las variables.
+
+c.  Evaluar la precisión, de las predicciones usando la métrica (o
+    métricas) que consideréis más oportuna. Proporcionar las
+    estimaciones de la probabilidad de `"Yes"`, en la muestra de test.
+
+### Análisis Exploratorio Inicial
+
+Separamos el data frame completo en un conjunto de train y test, y a continuación examinamos los datos:
+```{r}
+set.seed(semilla)
+nobs <- nrow(df)
+itrain <- sample(nobs, 0.8 * nobs)
+train <- df[itrain, ]
+test <- df[-itrain, ]
+
+str(train)
+```
+
+#### artist_count
+
+```{r}
+plot(train$artist_count, main="Número de artistas que participan en la canción")
+```
+
+La variable `artist_count` tiene clases muy poco representadas. Estas
+clases podrían aparecer únicamente en uno de los dos conjuntos
+(entrenamiento y test). Por ejemplo, en el conjunto de test podrían aparecer 
+canciones con más de 8 artistas, y no podríamos asignarle ninguna clase de las actuales.
+Para evitar problemas de este tipo, procedemos a
+agrupar las canciones con `artist_count > 3`. Transforamos el conjunto de datos entero, 
+para tener las mismas categorías en train y test:
+
+```{r}
+library(dplyr)
+library(forcats)
+
+train <- train %>%
+  mutate(
+    artist_count = as.numeric(as.character(artist_count)),      # pasar a numérica
+    artist_count = if_else(artist_count > 3, ">3", as.character(artist_count)),
+    artist_count = factor(artist_count, levels = c("1", "2", "3", ">3"))
+  )
+
+test <- test %>%
+  mutate(
+    artist_count = as.numeric(as.character(artist_count)),      # pasar a numérica
+    artist_count = if_else(artist_count > 3, ">3", as.character(artist_count)),
+    artist_count = factor(artist_count, levels = c("1", "2", "3", ">3"))
+  )
+
+plot(train$artist_count, main="Número de artistas por canción",
+xlab="Número de artistas")
+
+plot(train$hit ~ train$artist_count, main="Distribución de éxitos según el número de artistas",
+xlab="Número de artistas")
+
+par(mfrow = c(1, 1))
+```
+
+Visualizando la distribución de los éxitos, no parece seguir ninguna
+relación con el número de artistas que participan en la canción.
+Canciones con 4 o más artistas tiene una ligera proporción menor de
+éxitos respecto a los demás grupos.
+
+#### released_day
+
+Convertimos los días a tipo factor:
+
+```{r}
+train$released_day <- factor(train$released_day, levels = 1:31)
+par(mfrow=c(1, 2))
+plot(train$released_day, main="Día del mes de lanzamiento",
+        xlab="Día del mes", ylab="Frecuencia")
+plot(train$hit ~ train$released_day, main="Distribución de éxitos según día del mes de lanzamiento",
+        xlab="Día del mes", ylab="Frecuencia")
+par(mfrow=c(1, 1))
+```
+
+Utilizando la librería `lubridate` podemos obtener el día de la semana, lo cual resulta más informativo para el modelo, ya que utilizar `released_day` como categoría para cada día del mes carece de sentido práctico. Como alternativa, si se quisiera capturar efectos intramensuales, podrían agruparse los días en inicios, mediados o finales de mes. 
+
+```{r}
+library(lubridate)
+
+fecha_train <- make_date(train$released_year, train$released_month, train$released_day)
+train$released_week_day <- factor(wday(fecha_train,
+                           label = TRUE,
+                           abbr = FALSE,
+                           week_start = getOption("lubridate.week.start", 1)),
+                           ordered = FALSE)
+
+fecha_test <- make_date(test$released_year, test$released_month, test$released_day)
+test$released_week_day <- factor(wday(fecha_test,
+                           label = TRUE,
+                           abbr = FALSE,
+                           week_start = getOption("lubridate.week.start", 1)),
+                           ordered = FALSE)
+
+par(mfrow=c(1, 2))
+plot(train$released_week_day, main="Día de la semana de lanzamiento de las canciones",
+     xlab=NULL)
+plot(train$hit ~ train$released_week_day, main="Distribución de éxitos según el día de la semana",
+     xlab=NULL)
+par(mfrow=c(1, 1))
+```
+
+La mayoría de las canciones son lanzadas los viernes, pero no vemos la mayor tasa de hits en dicho día sino en el miércoles.
+
+```{r}
+train$released_day <- as.integer(train$released_day)
+train$released_month_period <- cut(
+  train$released_day,
+  breaks = c(0, 10, 20, 31),
+  labels = c("Inicio", "Medio", "Final"),
+  right = TRUE
+)
+
+test$released_day <- as.integer(test$released_day)
+test$released_month_period <- cut(
+  test$released_day,
+  breaks = c(0, 10, 20, 31),
+  labels = c("Inicio", "Medio", "Final"),
+  right = TRUE
+)
+
+par(mfrow=c(1, 2))
+plot(train$released_month_period, main="Periodo del mes de lanzamiento",
+     xlab="Periodo del mes")
+plot(train$hit ~ train$released_month_period, main="Distribución de éxitos según el periodo del mes",
+     xlab="Grupo del mes")
+par(mfrow=c(1, 1))
+
+train$released_day <- NULL # eliminamos la variable released_day
+test$released_day <- NULL
+```
+Vemos mayor número de lanzamientos a inicios de mes, pero una tasa de hits ligeramente superior a finales.
+
+#### released_month
+
+```{r}
+head(train$released_month)
+```
+
+La variable `released_month`es de tipo factor ordenado: Jan < Feb < Mar < Apr < May < Jun < ... < Dec
+
+Vamos a eliminar el orden, ya que no tiene sentido que un mes sea mayor o menor que otro.
+```{r}
+train$released_month <- factor(train$released_month, ordered = FALSE)
+test$released_month <- factor(test$released_month, ordered = FALSE)
+
+par(mfrow=c(1, 2))
+plot(train$released_month, main="Mes de lanzamiento de las canciones",
+                xlab="Mes")
+plot(train$hit~train$released_month, main="Distribución de éxitos según mes de lanzamiento", xlab="Mes")
+par(mfrow=c(1, 1))
+```
+
+Parece haber una tasa mayor de hits en los primeros meses del año. Vemos que mayo, el último mes antes del verano, es el que más lanzamientos tiene.
+
+#### released_year
+```{r}
+str(train$released_year)
+```
+
+La variable `released_year` está guardada como variable de tipo entero,
+pero en realidad es una variable categórica:
+
+```{r}
+train$released_year <- as.factor(train$released_year)
+test$released_year <- as.factor(test$released_year)
+
+plot(train$released_year, main="Año de lanzamiento de las canciones",
+        xlab="Año")
+```
+
+De nuevo, nos encontramos en una situación parecida al número de artistas en las canciones.
+
+```{r}
+plot(train$hit ~ train$released_year, main="Distribución de éxitos según el año de lanzamiento", 
+     xlab="Año")
+table(train$hit[train$released_year=="2013"])
+```
+
+Podemos observar también que hay años donde no hay hits, como el 2013. Agrupamos las canciones anteriores a 2020:
+
+```{r}
+train <- train %>%
+  mutate(released_year = as.numeric(as.character(released_year)),
+         released_year = case_when(
+           released_year <= 2019 ~ "<2020",
+           released_year == 2020 ~ "2020",
+           released_year == 2021 ~ "2021",
+           released_year == 2022 ~ "2022",
+           released_year == 2023 ~ "2023") %>% as.factor())
+test <- test %>%
+  mutate(released_year = as.numeric(as.character(released_year)),
+         released_year = case_when(
+           released_year <= 2019 ~ "<2020",
+           released_year == 2020 ~ "2020",
+           released_year == 2021 ~ "2021",
+           released_year == 2022 ~ "2022",
+           released_year == 2023 ~ "2023") %>% as.factor())
+
+par(mfrow=c(1, 2))
+plot(train$released_year, main="Periodo de lanzamiento de las canciones",
+     xlab="Año")
+plot(train$hit ~ train$released_year, main="Distribución de éxitos según el periodo de lanzamiento", xlab="Año")
+par(mfrow=c(1, 1))
+```
+
+#### hit
+
+```{r}
+table(df$hit)
+```
+
+Cambiamos el nivel de referencia de la variable respuesta, de forma que
+el nivel de referencia sea `"Yes"` en lugar de `"No"`.
+
+```{r}
+train$hit <- relevel(as.factor(train$hit), ref = "Yes")
+test$hit <- relevel(as.factor(test$hit), ref = "Yes")
+
+table(train$hit)
+```
+
+Podemos ver que las clases no están balanceadas. Aproximadamente una de
+cuatro canciones son éxitos.
+
+
+#### df final
+
+```{r}
+str(train)
+```
+
+Primero ajustamos un árbol de decisión completo:
+
+```{r, message=FALSE, warning=FALSE}
+library(rpart)
+
+set.seed(semilla)
+
+tree <- rpart(hit ~ ., data = train, cp = 0, method = "class")
+tree
+```
+
+```{r, message=FALSE, warning=FALSE}
+tree$cptable
+```
+
+El árbol con un único nodo, CP=0.178571429, predice siempre la categoría
+mayoritaria para minimizar el error. En nuestro caso, dado que la
+proporción de hit="No" (0.7341772) es mayor que la de hit=“Yes”
+(0.2658228), el árbol clasifica todas las observaciones como “No”.
+
+El árbol completo, CP=0, utiliza 19 divisiones y consigue un error
+relativo de 0.4880952 en los datos de entrenamiento, es decir, disminuye
+el error a la mitad con respecto al árbol con solo el nodo raíz. Sin
+embargo el error de validación cruzada es de 0.7619048, lo que indica
+que el árbol completo se está sobreajustando a los datos de
+entrenamiento.
+
+Para obtener el parámetro de complejidad óptimo seguimos el criterio de
+un error estándar de Breiman et al. (1984):
+
+```{r, message=FALSE, warning=FALSE}
+xerror <- tree$cptable[,"xerror"]
+imin.xerror <- which.min(xerror)
+upper.xerror <- xerror[imin.xerror] + tree$cptable[imin.xerror, "xstd"]
+icp <- min(which(xerror <= upper.xerror))
+
+# Parámetro de complejidad óptimo
+cp <- tree$cptable[icp, "CP"]; cp
+```
+
+El parámetro de complejidad óptimo seleccionado siguiendo el criterio de
+un error estándar de Breiman et al. (1984) es 0.01488095.
+
+Podemos representar el error de validación cruzada y el parámetro de
+complejidad óptimo seleccionado:
+
+```{r, message=FALSE, warning=FALSE}
+plotcp(tree)
+points(x = icp, y = tree$cptable[icp, "xerror"], col = "red", pch = 19, cex = 1.5)
+```
+
+Utilizando el CP óptimo podamos el árbol y lo representamos:
+
+```{r, message=FALSE}
+library(rpart.plot)
+
+tree <- prune(tree, cp = cp)
+tree
+```
+
+Interpretamos el árbol, no se comentará individualmente cada una de las
+reglas obtenidas, con el fin de agilizar el análisis.
+
+La primera variable que se utiliza para dividir el árbol es
+*in_spotify_charts*.
+
+Cuando *in_spotify_charts \>= 16.5*, es decir cuando la canción aparece
+al menos entre las 17 más reproducidas de las listas de Spotify, la
+canción se clasifica como éxito.
+
+El nodo raíz comete 168 errores de clasificación. Tras esta primera
+división, el número total de errores se reduce a 138, 61 en el nodo
+izquierdo y 77 en el nodo derecho. El error baja de 0.2658228 a
+0.2183544 (138/632) después del primer split.
+
+En la tabla tree\$cptable podemos ver que con split = 1, rel.error =
+0.8214286 lo cual coincide con (0.2183544/0.2658228)
+
+La siguiente variable que se utiliza es *energy\_*.
+
+Si *in_spotify_charts \>= 16.5* y *energy\_ \< 81.5* la canción se
+clasifica como éxito.
+
+En el nodo izquierdo se cometen 45 errores de clasificación y 7 en el
+nodo derecho. El nodo padre tiene un error de 0.4013158 = 61/152, con
+esta nueva regla se consigue bajar a 0.3421053 = 52/152. El arbol pasa
+de un error del 0.2183544 a 0.2041139 ((52 + 77) / 632).
+
+La tercera variable que se utiliza es *in_deezer_charts*. Cuando
+*in_spotify_charts \< 16.5* y *in_deezer_charts\>=13.5*, es decir,
+cuando una canción esta fuera de las 17 canciones más reproducidas en
+Spotify y dentro de las 14 más reproducidas de las listas de Deezer la
+canción se clasifica como éxito.
+
+Esta nueva regla reduce el error del nodo padre de (77/480 = 0.1604167)
+a (67/470=0.1425532), el nodo izquierdo no tiene error en la muestra de
+entrenamiento, todas las canciones que cumplen la regla son éxitos.
+
+El error del arbol con tres divisiones es de ((52 + 67) / 632 =
+0.1882911).
+
+....
+
+La última división que se hace es: *`in_spotify_charts >= 16.5`* &
+*`energy_ < 81.5`* & *`released_year >= 2020.5`* &
+*`released_year >=2022.5`* & *`released_month=Jan,Feb,Mar,Apr`*.
+
+El arbol final tiene 6 divisiones y un error de
+(9+7+3+9+7+0+67)/632=0.1613924. El cual coincide con el error relativo
+de tree\$cptable: 0.1613924/0.2658228=0.6071428
+
+```{r}
+rpart.plot(tree) 
+```
+
+Importancia de las variables
+
+```{r}
+importance <- tree$variable.importance 
+importance <- round(100*importance/sum(importance), 1)
+importance
+```
+
+De esta tabla se concluye que las posiciones en las listas de *Spotify*
+y *Deezer* son las variables más decisivas a la hora de predecir si una
+canción será un éxito. En concreto:
+
+-   *`in_spotify_charts`* es la variable más importante.
+-   Le sigue *`in_deezer_charts`*.
+-   Después, variables como *`released_month`*, *`released_year`* y
+    *`energy_`.* también influyen, aunque en menor medida.
+
+En resumen, a la hora de decidir si una canción es un éxito o no lo más
+importante es aparecer en las listas superiores de Spotify y Deezer.
+
+A continuación evaluamos la precisión de las predicciones en la muestra
+de test:
+
+```{r}
+obs <- test$hit
+pred <- predict(tree, newdata = test, type = "class")
+caret::confusionMatrix(pred, obs, mode = "everything")
+```
+
+Aunque el árbol tiene una precisión global del 84.91%, este valor está
+influido por el fuerte desbalance entre clases, tal como indica el alto
+valor de `No Information Rate` (0.7987 = `Accuracy` si clasificamos
+todos los datos a la clase mayoritaria). La `balanced accuracy` (0.695)
+confirma que, al corregir el efecto del desbalance entre clases, el
+rendimiento del árbol es moderado. El coeficiente Kappa, que es adecuado
+para evaluar problemas con clases desbalanceadas, es de 0.45, indicando
+una concordancia moderada entre las predicciones y las observaciones
+reales.
+
+El clasificador destaca por una especificidad muy alta (0.95), lo que
+significa que clasifica correctamente la gran mayoría de canciones que
+no son éxitos. Sin embargo, su sensibilidad es baja (0.44), es decir,
+identifica menos de la mitad de las canciones que realmente son éxitos.
+Esto revela que el árbol tiende a ser conservador y a predecir "No" en
+caso de duda.
+
+En conjunto, el árbol de decisión es útil para descartar canciones que
+probablemente no serán un éxito, pero tiene dificultades para detectar
+los verdaderos éxitos.
+
+Las estimaciones de la probabilidad de que una canción sea un éxito en
+la muestra de test son:
+
+```{r}
+p.est <- predict(tree, newdata = test, type="prob")[,"Yes"]; p.est
+```
+
+Asignaremos mayores pesos a los éxitos con el fin de mitigar el efecto
+del desbalanceo. Específicamente, se otorgará el doble de peso a los
+éxitos, de modo que clasificar erróneamente un éxito equivale a
+clasificar erróneamente dos canciones que no lo son.
+
+```{r}
+freq <- table(train$hit)
+weights <- ifelse(train$hit == "Yes",
+                  2,
+                  1)
+
+set.seed(semilla)
+tree <- rpart(hit ~ ., data = train, method = "class",
+              weights = weights,
+              cp = 0)
+```
+
+```{r}
+xerror <- tree$cptable[,"xerror"]
+imin.xerror <- which.min(xerror)
+upper.xerror <- xerror[imin.xerror] + tree$cptable[imin.xerror, "xstd"]
+icp <- min(which(xerror <= upper.xerror))
+
+# Parámetro de complejidad óptimo
+cp <- tree$cptable[icp, "CP"]; cp
+```
+
+```{r}
+plotcp(tree)
+points(x = icp, y = tree$cptable[icp, "xerror"], col = "red", pch = 19, cex = 1.5)
+```
+
+```{r}
+tree <- prune(tree, cp = cp)
+rpart.plot(tree) 
+```
+
+```{r}
+obs <- test$hit
+pred <- predict(tree, newdata = test, type = "class")
+caret::confusionMatrix(pred, obs)
+```
+
+Al asignarle mayor peso a las canciones que son éxitos, el árbol aumenta
+notablemente su capacidad para detectarlas.
+
+La sensibilidad sube de 0.44 a 0.68. Este cambio implica sacrificar
+parte de la especificidad (de 0.95 a 0.74), ya que el modelo ahora
+predice más “Yes” y comete más falsos positivos. Aun así, la
+`balanced accuracy` (0.7138) mejora ligeramente respecto al árbol
+original, lo que indica un rendimiento más equilibrado entre ambas
+clases.
+
+En resumen, este modelo es menos preciso en términos globales, pero
+resulta más adecuado cuando el objetivo es no dejar escapar canciones
+que podrían convertirse en un éxito. No obstante, una sensibilidad del
+68 % sigue siendo relativamente baja.
+
+# Ejercicio 2 {.unnumbered}
+
+Realizar la clasificación anterior empleando Bosques Aleatorios mediante
+el método `"rf"` del paquete `caret` considerando 300 árboles.
+
+a.  Seleccionar el número de predictores empleados en cada división
+    `mtry = c(1, 2, 4, 8)` de forma que se minimice el error de
+    validación cruzada con 5 grupos.
+
+```{r, message=FALSE}
+library(caret)
+
+set.seed(semilla)
+control <- trainControl(method = "cv", number = 5)
+tunegrid <- expand.grid(mtry = c(1, 2, 4, 8))
+rf_model <- train(hit ~ ., data = train, method = "rf",
+                  tuneGrid = tunegrid,
+                  trControl = control,
+                  ntree = 300,
+                  importance = TRUE,
+                  localImp = TRUE,
+                  metric = "Kappa")  # Utilizamos como métrica objetivo Kappa en lugar de Accuracy para manejar mejor el desbalanceo
+rf_model
+plot(rf_model)
+```
+Escogemos la métrica Kappa para optimizar la selección de hiperparámetros, ya que está métrica es más robusta al desbalanceo de la clase objetivo que la precisión.
+
+Vemos que el modelo con `mtry = 8` es el que maximiza el valor de Kappa y, en este caso, también la precisión.
+
+b.  Representar la convergencia del error en las muestras OOB en el
+    modelo final.
+
+```{r}
+oob_errors <- rf_model$finalModel$err.rate
+plot(rf_model$finalModel, main = "Evolución de las tasas de error OOB")
+legend("right", colnames(oob_errors), lty = 1:5, col = 1:6)
+```
+
+Vemos cómo el error OOB (Out-Of-Bag) disminuye rápidamente al principio
+y se estabiliza alrededor de 0.2 a medida que se añaden más árboles.
+Esto sugiere que un modelo más sencillo con menos árboles podría
+alcanzar un error similar. Aunque el error no aumenta con
+más árboles (no hay sobreajuste), usar 300 puede ser computacionalmente
+costoso. Dado que el dataset es pequeño, mantener los 300 árboles es
+aceptable.
+
+Respecto al rendimiento por clases, la línea de error para la clase
+"Yes" (éxitos) es notablemente más alta que para la clase "No". El error
+para los éxitos converge alrededor de 0.55, mientras que para los
+no-éxitos se estabiliza por debajo de 0.1. Esto indica que el modelo
+tiene significativamente más dificultad para clasificar correctamente
+las canciones que son éxitos, coincidiendo con lo observado en el árbol
+de decisión del ejercicio anterior. Evidentemente, esto se debe al desbalanceo 
+que ya hemos comentado.
+
+c.  Estudiar la importancia de las variables y representar el efecto
+    parcial de la variable más importante. Analizar también las
+    interacciones de segundo orden entre las 4 variables más importantes
+    (se pueden emplear las funciones de la librería
+    `randomForestExplainer`).
+    
+```{r}
+library(randomForestExplainer)
+
+# Importancia de las variables
+importance <- importance(rf_model$finalModel)
+importance
+```
+
+```{r}
+varImpPlot(rf_model$finalModel, main = "Importancia de las variables")
+```
+
+```{r}
+library(randomForest)
+library(pdp)
+
+varImp(rf_model)
+varimp <- names(sort(importance(rf_model$finalModel)[,1], decreasing=TRUE))
+ice1 <- partial(rf_model, pred.var = varimp[1])
+ice11 <- partial(rf_model, pred.var = varimp[1],ice=TRUE)
+
+p1 <- plotPartial(ice1)
+p11 <- plotPartial(ice11)
+gridExtra:::grid.arrange(p1, p11, ncol = 2)
+```
+
+Analizar también las
+    interacciones de segundo orden entre las 4 variables más importantes
+    (se pueden emplear las funciones de la librería
+    `randomForestExplainer`).
+```{r}
+importance_df <- data.frame(
+  variable = rownames(importance),
+  importance = importance[, "MeanDecreaseGini"]
+)
+
+top4 <- head(importance_df[order(-importance_df$importance), ], 4)$variable
+top4
+```
+  
+```{r}
+interactions_frame <- min_depth_interactions(rf_model$finalModel, vars = top4)
+interactions_frame
+```
+  
+
+```{r}
+plot_min_depth_interactions(interactions_frame)
+```
+
+
+
+
+
+
+d.  Evaluar la precisión de las predicciones en la muestra de test y
+    comparar los resultados con los obtenidos con el modelo del
+    ejercicio anterior.
+
+```{r}
+obs <- test$hit
+pred <- predict(rf_model, newdata = test)
+caret::confusionMatrix(pred, obs)
+```
+
+# Ejercicio 3 {.unnumbered}
+
+Realizar la clasificación anterior empleando Boosting mediante la
+función `ada()` del paquete `ada`.
+
+a.  Ajustar el modelo (sin emplear el paquete `caret`) seleccionando los
+    valores óptimos de los hiperparámetros minimizando el error OOB,
+    considerando las posibles combinaciones de `iter =  c(10, 20)`,
+    `maxdepth = 2:3` y `nu = c(0.1, 0.5)`.
+
+```{r, message=FALSE}
+library(ada)
+
+grid <- expand.grid(
+  iter = c(10, 20),
+  maxdepth = 2:3,
+  nu = c(0.1, 0.5)
+)
+
+oob_errors <- numeric(nrow(grid))
+
+for (i in 1:nrow(grid)) {
+  # Configurar control para rpart con la profundidad máxima
+  control <- rpart.control(maxdepth = grid$maxdepth[i], cp = 0,
+                          minsplit = 10, xval = 0)
+
+  model <- ada(
+    hit ~ .,
+    data = train,
+    type = "discrete",
+    control = control,
+    iter = grid$iter[i],
+    nu = grid$nu[i]
+  )
+
+  # Error OOB (Out-of-Bag)
+  oob_errors[i] <- model$confusion[2, 1] + model$confusion[1, 2]
+}
+
+best_index <- which.min(oob_errors)
+best_params <- grid[best_index, ]
+best_params
+
+```
+
+b.  Representar la evolución del error OOB respecto al número de
+    iteraciones en el modelo final.
+
+```{r}
+control_final <- rpart.control(maxdepth = best_params$maxdepth, cp = 0,
+                              minsplit = 10, xval = 0)
+
+final_model <- ada(
+  hit ~ .,
+  data = train,
+  type = "discrete",
+  control = control_final,
+  iter = best_params$iter,
+  nu = best_params$nu
+)
+
+plot(final_model, k = 1, test = TRUE)
+title("Evolución del error OOB")
+```
+
+c.  Estudiar la importancia de los predictores del paquete `ada`.
+
+```{r}
+varplot(final_model)
+```
+
+Como se puede ver en el gráfico, el número de artistas que participan en
+la canción es la variable más importante para el modelo a la hora de
+clasificar dicha canción como un `hit` o no, seguida por la cantidad de
+contenido instrumental. Por otro lado, variables como el modo de la
+canción y el día del mes en el que se lanzó aportan poco al modelo
+
+d.  Evaluar la precisión, de las predicciones y de las estimaciones de
+    la probabilidad, en la muestra de test y comparar los resultados con
+    los obtenidos con el modelo del ejercicio anterior.
+
+```{r, warning=FALSE}
+pred <- predict(final_model, newdata = test)
+p_est <- predict(final_model, newdata = test, type = "probs")
+caret::confusionMatrix(pred, test$hit, positive="Yes")
+```

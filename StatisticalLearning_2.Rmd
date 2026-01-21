@@ -1,0 +1,302 @@
+---
+title: 'Práctica 2: Regresión'
+author: 'Grupo 5'
+date: "Curso 2025/2026"
+output:
+  pdf_document: default
+  word_document: default
+  html_document:
+    toc: yes
+    toc_float: yes
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{=html}
+<!--
+knitr::purl("Practica_2.Rmd", documentation = 2)
+knitr::spin("Practica_2.R", knit = FALSE)
+-->
+```
+
+Esta práctica debe entregarse en formato pdf, incluyendo el código R
+utilizado, las correspondientes salidas y los comentarios (o
+interpretaciones de los resultados) pertinentes (para ello se recomienda
+emplear RMarkdown, a partir de un fichero *.Rmd* o un fichero *.R*
+mediante spin).
+
+Se empleará el conjunto de datos `concreteX` almacenado en el archivo
+*concreteX.RData*, donde *X* es el número de grupo, con información
+sobre mezclas de hormigón (para más detalles ver
+<https://archive.ics.uci.edu/dataset/165/concrete+compressive+strength>;
+se seleccionaron al azar 800 observaciones y 7 de los posibles
+predictores).
+
+Se considerará como respuesta la variable `strength` que contiene la
+resistencia a la compresión de la mezcla de cemento (en MPa) y como
+predictores el resto de variables del conjunto de datos (los
+ingredientes y el tiempo de "curado"):
+
+| Predictor | Descripción |
+|:---|:---|
+| cement | Cemento (kg/m3) |
+| slag | Escoria de alto horno (kg/m3) |
+| ash | Ceniza (kg/m3), pequeñas partículas producidas por la combustión de carbón |
+| water | Agua (kg/m3) |
+| superplasticizer | Superplastificante (kg/m3), aditivo que reduce la agregación de partículas |
+| coarse | Árido grueso (kg/m3) |
+| fine | Árido fino (kg/m3) |
+| age | Edad de la muestra de hormigón en el momento del ensayo (días) |
+
+Se debe establecer la semilla igual al número de grupo multiplicado por
+10 mediante la función `set.seed()` (también se recomienda hacerlo antes
+de ajustar cada modelo) y se considerarán el 80% de las observaciones
+como muestra de aprendizaje y el 20% restante como muestra de test.
+
+Cargamos los datos:
+
+```{r}
+grupo <- 5
+load(paste0("concrete", grupo, ".RData")) 
+semilla <- as.numeric(grupo) * 10
+
+df <- concrete5
+str(df)
+```
+
+Conjunto de entrenamiento y test:
+
+```{r}
+set.seed(semilla)
+nobs <- nrow(df)
+itrain <- sample(nobs, 0.8 * nobs)
+train <- df[itrain, ]
+test <- df[-itrain, ]
+# x <- as.matrix(train[-1])
+# y <- train$strength
+```
+
+# Análisis exploratorio
+
+```{r}
+str(train)
+```
+
+```{r}
+library(corrplot)
+corrplot(cor(train), method = "color", 
+         type = "upper",
+         tl.col = "black", 
+         addCoef.col = "black")
+
+```
+
+No hay correlaciones especialmente altas. La variable respuesta,
+`strength`, tiene la mayor correlación con `cement`, 0.5, indicando
+cierta correlación directa, a mayor contenido de cemento, mayor
+resistencia.
+
+No se observan correlaciones especialmente altas entre las variables. La
+correlación más elevada se da en as variables `water` y
+`superplasticizer`, siendo una relación negativa y alcanzando -0.64.
+
+# Ejercicio 1
+
+Ajustar un modelo lineal con penalización *elastic net* empleando el
+método `"glmnet"` del paquete `caret`:
+
+a)  Utilizar validación cruzada con 10 grupos para seleccionar los
+    valores "óptimos" de los hiperparámetros considerando las posibles
+    combinaciones de `alpha = seq(0, 1, len = 5)` y
+    `lambda = seq(0, 5, len = 4)` y empleando el criterio de un error
+    estándar de Breiman.
+
+```{r, warning=FALSE, message=FALSE}
+library(caret)
+
+grid <- expand.grid(
+  alpha = seq(0, 1, len = 5),
+  lambda = seq(0, 5, len = 4)
+)
+
+# ?caret::oneSE 
+# oneSE is a rule in the spirit of the "one standard error" rule of Breiman et al. (1984)
+caret.glmnet <- train(strength ~ ., 
+                      data = train,
+                      method = "glmnet",
+                      preProc = c("zv", "center", "scale"),
+                      trControl = trainControl(method = "cv", number = 10,
+                                               selectionFunction = "oneSE"),
+                      metric = "RMSE",
+                      tuneGrid = grid)
+caret.glmnet
+```
+
+Los mejores resultados se obtienen con `alpha = 0`, es decir, con una
+regresión Ridge y sin penalización, `lambda = 0`.
+
+Empleando el criterio de un error estándar de Breiman, se obtiene el
+modelo `alpha = 0` y `lambda = 3.333333`.
+
+```{r, warning=FALSE}
+ggplot(caret.glmnet, highlight = TRUE)
+```
+
+b)  Representar la evolución de los coeficientes en función de la
+    penalización y obtener los correspondientes al modelo final.
+
+```{r}
+plot(caret.glmnet$finalModel, xvar = "lambda", label = TRUE)   
+```
+
+```{r}
+coef(caret.glmnet$finalModel, s = caret.glmnet$bestTune$lambda)
+```
+
+c)  Evaluar las predicciones en la muestra de test (gráfico y medidas de
+    error).
+
+```{r, warning=FALSE, message=FALSE}
+library(mpae)
+obs <- test$strength
+pred <- predict(caret.glmnet, newdata = test)
+accuracy(pred, obs)
+
+```
+
+```{r}
+library(mpae)
+pred.plot(pred, obs, xlab = "Predicción", ylab = "Observado")
+```
+
+# Ejercicio 2
+
+Ajustar un modelo mediante regresión spline adaptativa multivariante
+(MARS) empleando la función `earth()` del paquete `earth`:
+
+a)  Considerar un modelo aditivo sin interacciones, con 30 términos como
+    máximo en el crecimiento y 10 términos como máximo en el modelo
+    final.
+
+```{r, message=FALSE, warning=FALSE}
+library(earth)
+set.seed(semilla)
+mars <- earth(strength ~ ., data = train, nk = 30, nprune = 10)
+summary(mars)
+```
+
+Se han seleccionado 10 términos en el modelo final partiendo de los 7
+predictores. Destaca el efecto de la edad, que aparece hasta en 3
+términos indicando claramente una relación no lineal.
+
+b)  Estudiar el efecto de los predictores incluidos en el modelo final y
+    obtener medidas de su importancia.
+
+```{r}
+plotmo(mars)
+```
+
+Aquí se puede ver la compleja relación que tiene la edad con la
+resistencia, como comentamos anteriormente. Para edades menores de 7
+días, el coeficiente es negativo, reflejando una resistencia baja en las
+primeras fases de curado, aunque esta penalización disminuye conforme
+pasan los días, lo que implica un aumento progresivo de la resistencia.
+A partir de los 7 días entra en juego un segundo término, también con
+coeficiente negativo, que modula el crecimiento y provoca que la
+resistencia siga aumentando pero a un ritmo decreciente. Finalmente, a
+partir de los 56 días aparece un tercer término con coeficiente
+positivo, señalando una nueva fase en la que el crecimiento de la
+resistencia es aún menor (llegando a decrecer en días muy avanzados).
+
+El resto de variables presenan sólo un corte, indicando una relación más
+simple. En el caso del cemento, la resistencia aumenta rápidamente hasta
+que este alcanza el valor de 362.6, donde se estabiliza. Lo mismo sucede
+para las variables `superplastizicer` y `ash` (en el caso de la cenizaa,
+primero decrece y luego se estabiliza). Las variables `water`, `coarse`
+y `fine` tienen un efecto un poco distinto, pues mantienen un efecto
+estable hasta que alcanzan cierto valor y ahí es cuando la resistencia
+comienza a decrecer.
+
+```{r}
+varimp <- evimp(mars)
+varimp
+```
+
+```{r}
+plot(varimp)
+```
+
+La variable más importante es la edad (que estaba presente en hasta 3
+términos) seguida del cemento y el agua. La variable menos relevante
+para el modelo es `superplastizicer`.
+
+c)  Evaluar las predicciones en la muestra de test (gráfico y medidas de
+    error).
+
+```{r}
+pred <- predict(mars, newdata = test)
+accuracy(pred, obs)
+```
+
+El error medio es ligeramente negativo, lo que indica una tendencia
+suave a infraestimar la resistencia. Las predicciones se desvían unas 6
+unidades respecto a los valores reales. El $R^2$ es de 0.75, disminuyendo ligeramente en el test con respecto al entrenamiento, pero aún así tiene un rendimiento aceptable en un modelo totalmente explicable.
+
+```{r}
+pred.plot(pred, obs, xlab = "Predicción", ylab = "Observado")
+```
+
+Las predicciones se ajustan bastante bien a la diagonal $x=y$, que representaría la predicción perfecta. Vemos como se desvían especialmente en valores altos de resistencia, donde el modelo tiende a infraestimar.
+
+# Ejercicio 3
+
+Volver a ajustar el modelo aditivo del ejercicio anterior empleando la
+función `gam()` del paquete `mcgv`.
+
+a)  Incluir los efectos no paramétricos de los predictores seleccionados
+    por el método MARS.
+
+```{r}
+library(mgcv)
+
+set.seed(semilla) 
+gam.model <- gam(strength ~ s(cement) + s(ash) + s(water) + s(superplasticizer) + 
+                             s(coarse) + s(fine) + s(age), 
+                 data = train)
+summary(gam.model)
+```
+Todos los predictores resultaron significativos.
+
+b)  Evaluar las predicciones en la muestra de test y comparar los
+    resultados con los del ejercicio anterior.
+    
+     
+
+```{r}
+pred.gam <- predict(gam.model, newdata = test)
+accuracy(pred.gam, obs)
+```
+
+Comparando ambos modelos, se observa que el GAM supera al MARS en casi todas las métricas clave. Aunque ambos tienden a infraestimar ligeramente la resistencia, el GAM presenta un error absoluto y cuadrático menor, un sesgo relativo reducido y un $R^2$ más alto (0.86 frente a 0.75), indicando que explica mejor la variabilidad de los datos. Esto refleja su capacidad para capturar relaciones no lineales de manera más suave.
+
+```{r}
+pred.plot(pred.gam, obs, xlab = "Predicción", ylab = "Observado")
+```
+Observamos como el modelo ya no se desvía tanto en valores altos de la resistencia, ajustándose mejor a la diagonal. 
+
+# Ejercicio 4
+
+Ajustar un modelo mediante regresión por projection pursuit empleando la
+función `ppr()`:
+
+a)  Considerar dos funciones ridge y seleccionar el suavizado
+    `bass = 2`.
+
+b)  Obtener los coeficientes del modelo y representar las funciones
+    ridge (comentar)
+
+c)  Evaluar las predicciones en la muestra de test (gráfico y medidas de
+    error) y comparar los resultados con los métodos anteriores
+    (teniendo en cuenta además la complejidad e interpretabilidad de los
+    modelos).
